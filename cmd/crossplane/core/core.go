@@ -25,6 +25,7 @@ import (
 
 	"github.com/crossplane/crossplane-runtime/pkg/logging"
 	"github.com/crossplane/crossplane/apis"
+	"github.com/crossplane/crossplane/pkg/controller/experimental"
 	"github.com/crossplane/crossplane/pkg/controller/oam"
 	"github.com/crossplane/crossplane/pkg/controller/workload"
 )
@@ -66,6 +67,10 @@ func (c *Command) Run(log logging.Logger) error {
 
 	if err := workload.Setup(mgr, log); err != nil {
 		return errors.Wrap(err, "Cannot setup workload controllers")
+	}
+
+	if err := experimental.Setup(mgr, log); err != nil {
+		return errors.Wrap(err, "Cannot setup experimental controllers")
 	}
 
 	return errors.Wrap(mgr.Start(ctrl.SetupSignalHandler()), "Cannot start controller manager")

@@ -24,6 +24,7 @@ import (
 	"github.com/pkg/errors"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
@@ -153,6 +154,25 @@ func runExperiment(m ctrl.Manager, w v1alpha1.Watch, l logging.Logger, stop <-ch
 		Reconciler: &experimentReconciler{client: m.GetClient(), log: l, watching: w},
 	}
 
+	// TODO(negz): Set sync period?
+	ca, err := cache.New(m.GetConfig(), cache.Options{
+		Scheme: m.GetScheme(),
+		Mapper: m.GetRESTMapper(),
+	})
+	if err != nil {
+		return err
+	}
+
+	go func() {
+		<-m.Leading()
+		if err := ca.Start(stop); err != nil {
+			l.Debug("cannot run experiment cache", "error", err)
+		}
+	}()
+
+	ca.WaitForCacheSync(stop)
+
+	// TODO(negz): Give this guy the same cache?
 	c, err := controller.NewUnmanaged("experiment/"+w.Kind, m, o)
 	if err != nil {
 		return err
@@ -161,7 +181,8 @@ func runExperiment(m ctrl.Manager, w v1alpha1.Watch, l logging.Logger, stop <-ch
 	u := &unstructured.Unstructured{}
 	u.SetAPIVersion(w.APIVersion)
 	u.SetKind(w.Kind)
-	if err := c.Watch(&source.Kind{Type: u}, &handler.EnqueueRequestForObject{}); err != nil {
+
+	if err := c.Watch(source.NewKindWithCache(u, ca), &handler.EnqueueRequestForObject{}); err != nil {
 		return err
 	}
 
