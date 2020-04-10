@@ -2,7 +2,7 @@ module github.com/crossplane/crossplane
 
 go 1.13
 
-replace sigs.k8s.io/controller-runtime => github.com/negz/controller-runtime v0.5.1-0.20200317034243-d87c114e6a13
+replace sigs.k8s.io/controller-runtime => github.com/negz/controller-runtime v0.5.1-0.20200326231846-15460aedd9b7
 
 require (
 	github.com/crossplane/crossplane-runtime v0.6.1-0.20200406020956-f9d4e859f450

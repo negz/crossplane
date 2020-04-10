@@ -153,7 +153,7 @@ func runExperiment(m ctrl.Manager, w v1alpha1.Watch, l logging.Logger, stop <-ch
 		Reconciler: &experimentReconciler{client: m.GetClient(), log: l, watching: w},
 	}
 
-	c, err := controller.Configure("experiment/"+w.Kind, m, o)
+	c, err := controller.NewUnmanaged("experiment/"+w.Kind, m, o)
 	if err != nil {
 		return err
 	}
@@ -166,7 +166,7 @@ func runExperiment(m ctrl.Manager, w v1alpha1.Watch, l logging.Logger, stop <-ch
 	}
 
 	go func() {
-		<-m.Elected()
+		<-m.Leading()
 		if err := c.Start(stop); err != nil {
 			l.Debug("cannot run experiment controller", "error", err)
 		}
