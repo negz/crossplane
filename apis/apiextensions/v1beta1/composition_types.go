@@ -53,6 +53,10 @@ type CompositionSpec struct {
 	// +immutable
 	CompositeTypeRef TypeReference `json:"compositeTypeRef"`
 
+	// PatchSets may be included by any resource in this Composition.
+	// +optional
+	PatchSets []PatchSet `json:"patchSets"`
+
 	// Resources is the list of resource templates that will be used when a
 	// composite resource referring to this composition is created.
 	Resources []ComposedTemplate `json:"resources"`
@@ -62,6 +66,52 @@ type CompositionSpec struct {
 	// this composition will be created.
 	// +optional
 	WriteConnectionSecretsToNamespace *string `json:"writeConnectionSecretsToNamespace,omitempty"`
+}
+
+// InlinePatchSets dereferences PatchSets and includes their patches inline. The
+// updated CompositionSpec should not be persisted to the API server.
+func (cs *CompositionSpec) InlinePatchSets() error {
+	if len(cs.PatchSets) == 0 {
+		return nil
+	}
+
+	pn := make(map[string][]Patch)
+	for _, s := range cs.PatchSets {
+		for _, p := range s.Patches {
+			if p.Type == PatchTypePatchSet {
+				return errors.New("a patch in a PatchSet cannot be of type PatchSet")
+			}
+		}
+		pn[s.Name] = s.Patches
+	}
+
+	for _, r := range cs.Resources {
+		for _, p := range r.Patches {
+			if p.Type != PatchTypePatchSet {
+				continue
+			}
+			if p.PatchSetName == nil {
+				return errors.New("missing PatchSet name")
+			}
+			ps, ok := pn[*p.PatchSetName]
+			if !ok {
+				return errors.New("reference to undefined PatchSet")
+			}
+			r.Patches = append(r.Patches, ps...)
+		}
+
+	}
+
+	return nil
+}
+
+// A PatchSet is a set of patches that can be reused.
+type PatchSet struct {
+	// Name of this PatchSet.
+	Name string `json:"name"`
+
+	// Patches will be applied as an overlay to the base resource.
+	Patches []Patch `json:"patches"`
 }
 
 // TypeReference is used to refer to a type for declaring compatibility.
@@ -133,20 +183,34 @@ type ReadinessCheck struct {
 	MatchInteger int64 `json:"matchInteger,omitempty"`
 }
 
+// A PatchType is a type of patch.
+type PatchType string
+
+// Patch types.
+const (
+	PatchTypeFromCompositeFieldPath PatchType = "FromCompositeFieldPath"
+	PatchTypePatchSet               PatchType = "PatchSet"
+)
+
 // Patch is used to patch the field on the base resource at ToFieldPath
 // after piping the value that is at FromFieldPath of the target resource through
 // transformers.
 type Patch struct {
+	Type PatchType `json:"type"`
 
 	// FromFieldPath is the path of the field on the upstream resource whose value
-	// to be used as input.
-	FromFieldPath string `json:"fromFieldPath"`
+	// to be used as input. Required when type is FromCompositeFieldPath.
+	FromFieldPath *string `json:"fromFieldPath"`
 
 	// ToFieldPath is the path of the field on the base resource whose value will
 	// be changed with the result of transforms. Leave empty if you'd like to
 	// propagate to the same path on the target resource.
 	// +optional
-	ToFieldPath string `json:"toFieldPath,omitempty"`
+	ToFieldPath *string `json:"toFieldPath,omitempty"`
+
+	// PatchSetName to include patches from. Required when type is PatchSet.
+	// +optional
+	PatchSetName *string `json:"patchSetName,omitempty"`
 
 	// Transforms are the list of functions that are used as a FIFO pipe for the
 	// input to be transformed.
@@ -156,12 +220,29 @@ type Patch struct {
 
 // Apply runs transformers and patches the target resource.
 func (c *Patch) Apply(from, to runtime.Object) error {
+	switch c.Type {
+	case PatchTypeFromCompositeFieldPath:
+		return c.applyFromCompositeFieldPatch(from, to)
+	case PatchTypePatchSet:
+		// Already resolved - nothing to do.
+	}
+	return errors.New("unsupported patch type")
+}
+
+func (c *Patch) applyFromCompositeFieldPatch(from, to runtime.Object) error { //nolint:gocyclo
+	if c.FromFieldPath == nil {
+		return errors.New("FromCompositeFieldPath patches require a fromFieldPath")
+	}
+	if c.ToFieldPath == nil {
+		c.ToFieldPath = c.FromFieldPath
+	}
+
 	fromMap, err := runtime.DefaultUnstructuredConverter.ToUnstructured(from)
 	if err != nil {
 		return err
 	}
 
-	in, err := fieldpath.Pave(fromMap).GetValue(c.FromFieldPath)
+	in, err := fieldpath.Pave(fromMap).GetValue(*c.FromFieldPath)
 	if fieldpath.IsNotFound(err) {
 		// A composition may want to opportunistically patch from a field path
 		// that may or may not exist in the composite, for example by patching
@@ -182,14 +263,14 @@ func (c *Patch) Apply(from, to runtime.Object) error {
 	}
 
 	if u, ok := to.(interface{ UnstructuredContent() map[string]interface{} }); ok {
-		return fieldpath.Pave(u.UnstructuredContent()).SetValue(c.ToFieldPath, out)
+		return fieldpath.Pave(u.UnstructuredContent()).SetValue(*c.ToFieldPath, out)
 	}
 
 	toMap, err := runtime.DefaultUnstructuredConverter.ToUnstructured(to)
 	if err != nil {
 		return err
 	}
-	if err := fieldpath.Pave(toMap).SetValue(c.ToFieldPath, out); err != nil {
+	if err := fieldpath.Pave(toMap).SetValue(*c.ToFieldPath, out); err != nil {
 		return err
 	}
 	return runtime.DefaultUnstructuredConverter.FromUnstructured(toMap, to)
