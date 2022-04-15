@@ -54,18 +54,19 @@ const (
 	errFetchFnOCIConfig = "cannot fetch function OCI config"
 	errMakeFnTmpDir     = "cannot make temporary directory to unarchive function tarball"
 	errUntarFn          = "cannot unarchive function tarball"
+	errMkdir            = "cannot make directory"
+	errOpenFile         = "cannot open file"
+	errCopyFile         = "cannot copy file"
+	errCloseFile        = "cannot close file"
+	errCreateFile       = "cannot create file"
+	errWriteFile        = "cannot write file"
+	errReadFile         = "cannot read file"
 
 	// TODO(negz): Make these errFmt, with the image string.
-	errFetchFn            = "cannot fetch function from registry"
-	errLookupFn           = "cannot lookup function in store"
-	errWriteFn            = "cannot write function to store"
-	errFmtMkdir           = "cannot make directory %q"
-	errFmtOpenFile        = "cannot open file %q"
-	errFmtCopyFile        = "cannot copy file %q"
-	errFmtCloseFile       = "cannot close file %q"
-	errFmtCreateFile      = "cannot create file %q"
-	errFmtWriteFile       = "cannot write file %q"
-	errFmtReadFile        = "cannot read file %q"
+	errFetchFn  = "cannot fetch function from registry"
+	errLookupFn = "cannot lookup function in store"
+	errWriteFn  = "cannot write function to store"
+
 	errFmtSize            = "wrote %d bytes to %q; expected %d"
 	errFmtInvalidPath     = "tarball contains invalid file path %q"
 	errFmtFsExists        = "cannot determine whether filesystem %q exists"
@@ -198,9 +199,9 @@ type Store struct {
 type StoreOption func(*Store)
 
 // WithFS configures the filesystem a store should use.
-func WithFS(fs afero.Afero) StoreOption {
+func WithFS(fs afero.Fs) StoreOption {
 	return func(s *Store) {
-		s.fs = fs
+		s.fs = afero.Afero{Fs: fs}
 	}
 }
 
@@ -216,25 +217,25 @@ func NewStore(root string, o ...StoreOption) *Store {
 
 // Lookup the config file and flattened filesystem of the supplied ID in the
 // store. Returns an error that satisfies IsNotFound if either are not found.
-func (s *Store) Lookup(ctx context.Context, id string) (*ociv1.ConfigFile, string, error) {
+func (s *Store) Lookup(_ context.Context, id string) (*ociv1.ConfigFile, string, error) {
 	cfgPath := filepath.Join(s.root, id+configFileSuffix)
 
 	f, err := s.fs.Open(cfgPath)
 	if errors.Is(err, fs.ErrNotExist) {
-		return nil, "", errNotFound{errors.Wrapf(err, errFmtOpenFile, cfgPath)}
+		return nil, "", errNotFound{errors.Wrap(err, errOpenFile)}
 	}
 	if err != nil {
-		return nil, "", errors.Wrapf(err, errFmtOpenFile, cfgPath)
+		return nil, "", errors.Wrap(err, errOpenFile)
 	}
 
 	cfg, err := ociv1.ParseConfigFile(f)
 	if err != nil {
 		_ = f.Close()
-		return nil, "", errors.Wrapf(err, errFmtReadFile, cfgPath)
+		return nil, "", errors.Wrap(err, errReadFile)
 	}
 
 	if err := f.Close(); err != nil {
-		return nil, "", errors.Wrapf(err, errFmtCloseFile, cfgPath)
+		return nil, "", errors.Wrap(err, errCloseFile)
 	}
 
 	fsPath := filepath.Join(s.root, id)
@@ -243,7 +244,7 @@ func (s *Store) Lookup(ctx context.Context, id string) (*ociv1.ConfigFile, strin
 		return nil, "", errors.Wrapf(err, errFmtFsExists, fsPath)
 	}
 	if !exists {
-		return nil, "", errNotFound{errors.Wrapf(err, errFmtFsNotFound, fsPath)}
+		return nil, "", errNotFound{errors.Errorf(errFmtFsNotFound, fsPath)}
 	}
 
 	return cfg, fsPath, nil
@@ -283,16 +284,16 @@ func (s *Store) Write(ctx context.Context, id string, img ociv1.Image) error {
 	cfgPath := filepath.Join(s.root, id+configFileSuffix)
 	f, err := s.fs.Create(cfgPath)
 	if err != nil {
-		return errors.Wrapf(err, errFmtCreateFile, cfgPath)
+		return errors.Wrap(err, errCreateFile)
 	}
 
 	if err := json.NewEncoder(f).Encode(cfg); err != nil {
 		_ = f.Close()
-		return errors.Wrapf(err, errFmtWriteFile, cfgPath)
+		return errors.Wrap(err, errWriteFile)
 	}
 
 	if err := f.Close(); err != nil {
-		return errors.Wrapf(err, errFmtCloseFile, cfgPath)
+		return errors.Wrap(err, errCloseFile)
 	}
 
 	// We successfully wrote our 'filesystem' and config file. Time to move
@@ -333,25 +334,24 @@ func untar(ctx context.Context, tb io.Reader, fs afero.Fs, dir string) error { /
 		switch {
 		case mode.IsDir():
 			if err := fs.MkdirAll(path, 0755); err != nil {
-				return errors.Wrapf(err, errFmtMkdir, path)
+				return errors.Wrap(err, errMkdir)
 			}
 		case mode.IsRegular():
-			d := filepath.Dir(path)
-			if err := fs.MkdirAll(d, 0755); err != nil {
-				return errors.Wrapf(err, errFmtMkdir, d)
+			if err := fs.MkdirAll(filepath.Dir(path), 0755); err != nil {
+				return errors.Wrap(err, errMkdir)
 			}
 
 			dst, err := fs.OpenFile(path, os.O_RDWR|os.O_CREATE|os.O_TRUNC, mode.Perm())
 			if err != nil {
-				return errors.Wrapf(err, errFmtOpenFile, path)
+				return errors.Wrap(err, errOpenFile)
 			}
 			n, err := copyChunks(dst, tr, 1024*1024) // Copy in 1MB chunks.
 			if err != nil {
 				_ = dst.Close()
-				return errors.Wrapf(err, errFmtCopyFile, path)
+				return errors.Wrap(err, errCopyFile)
 			}
 			if err := dst.Close(); err != nil {
-				return errors.Wrapf(err, errFmtCloseFile, path)
+				return errors.Wrap(err, errCloseFile)
 			}
 			if n != hdr.Size {
 				return errors.Errorf(errFmtSize, n, path, hdr.Size)

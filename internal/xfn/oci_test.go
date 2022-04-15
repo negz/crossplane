@@ -25,61 +25,145 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	ociv1 "github.com/google/go-containerregistry/pkg/v1"
+	"github.com/google/go-containerregistry/pkg/v1/fake"
 	"github.com/spf13/afero"
 
 	"github.com/crossplane/crossplane-runtime/pkg/errors"
 	"github.com/crossplane/crossplane-runtime/pkg/test"
 )
 
-// tarball returns a tarball of all regular files and directories in the
-// supplied filesystem.
-func tarball(t *testing.T, afs afero.Fs) *bytes.Buffer {
-	t.Helper()
-
-	b := &bytes.Buffer{}
-	tw := tar.NewWriter(b)
-
-	afero.Walk(afs, "/", func(path string, info fs.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-
-		switch {
-		case info.Mode().IsDir():
-			hdr := &tar.Header{
-				Typeflag: tar.TypeDir,
-				Name:     path,
-			}
-			if err := tw.WriteHeader(hdr); err != nil {
-				t.Fatal(err)
-			}
-		case info.Mode().IsRegular():
-			hdr := &tar.Header{
-				Typeflag: tar.TypeReg,
-				Name:     path,
-				Mode:     int64(info.Mode()),
-				Size:     info.Size(),
-			}
-			if err := tw.WriteHeader(hdr); err != nil {
-				t.Fatal(err)
-			}
-			f, err := afs.Open(path)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if _, err := io.Copy(tw, f); err != nil {
-				t.Fatal(err)
-			}
-		}
-
-		return nil
-	})
-
-	if err := tw.Close(); err != nil {
-		t.Fatal(err)
+func TestStoreLookup(t *testing.T) {
+	type args struct {
+		ctx context.Context
+		id  string
+	}
+	type want struct {
+		cfg    *ociv1.ConfigFile
+		fsPath string
+		err    error
 	}
 
-	return b
+	cases := map[string]struct {
+		reason string
+		s      *Store
+		args   args
+		want   want
+	}{
+		"ConfigNotFound": {
+			reason: "We should return an error that satisfies IsNotFound if the config file was not found in the store.",
+			s:      NewStore("/store", WithFS(&afero.MemMapFs{})),
+			args: args{
+				id: "coolfn",
+			},
+			want: want{
+				err: errNotFound{errors.Wrap(errors.New("open /store/coolfn.json: file does not exist"), errOpenFile)},
+			},
+		},
+		"ParseConfigError": {
+			reason: "We should return an error that satisfies IsNotFound if the config file was not found in the store.",
+			s: NewStore("/store", WithFS(func() *afero.MemMapFs {
+				afs := &afero.MemMapFs{}
+				afero.WriteFile(afs, "/store/coolfn"+configFileSuffix, []byte("I'm different!"), 0755)
+				return afs
+			}())),
+			args: args{
+				id: "coolfn",
+			},
+			want: want{
+				err: errors.Wrap(errors.New("invalid character 'I' looking for beginning of value"), errReadFile),
+			},
+		},
+		"FilesystemNotFound": {
+			reason: "We should return an error that satisfies IsNotFound if the filesystem was not found in the store.",
+			s: NewStore("/store", WithFS(func() *afero.MemMapFs {
+				afs := &afero.MemMapFs{}
+				afero.WriteFile(afs, "/store/coolfn"+configFileSuffix, []byte("{}"), 0755)
+				return afs
+			}())),
+			args: args{
+				id: "coolfn",
+			},
+			want: want{
+				err: errNotFound{errors.Errorf(errFmtFsNotFound, "/store/coolfn")},
+			},
+		},
+		"Successful": {
+			reason: "We should return a config file and a filesystem path if they exist in the store.",
+			s: NewStore("/store", WithFS(func() *afero.MemMapFs {
+				afs := &afero.MemMapFs{}
+				afs.MkdirAll("/store/coolfn", 0755)
+				afero.WriteFile(afs, "/store/coolfn"+configFileSuffix, []byte(`{"author":"negz"}`), 0755)
+				return afs
+			}())),
+			args: args{
+				id: "coolfn",
+			},
+			want: want{
+				cfg:    &ociv1.ConfigFile{Author: "negz"},
+				fsPath: "/store/coolfn",
+			},
+		},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			cfg, fsPath, err := tc.s.Lookup(tc.args.ctx, tc.args.id)
+
+			if diff := cmp.Diff(tc.want.cfg, cfg); diff != "" {
+				t.Errorf("%s\ns.Lookup(...): -want cfg, +got cfg:\n%s", tc.reason, diff)
+			}
+
+			if diff := cmp.Diff(tc.want.fsPath, fsPath); diff != "" {
+				t.Errorf("%s\ns.Lookup(...): -want fsPath, +got fsPath:\n%s", tc.reason, diff)
+			}
+
+			if diff := cmp.Diff(tc.want.err, err, test.EquateErrors()); diff != "" {
+				t.Errorf("%s\ns.Lookup(...): -want error, +got error:\n%s", tc.reason, diff)
+			}
+		})
+	}
+}
+
+func TestStoreWrite(t *testing.T) {
+	type args struct {
+		ctx context.Context
+		id  string
+		img ociv1.Image
+	}
+
+	cases := map[string]struct {
+		reason string
+		s      *Store
+		args   args
+		want   error
+	}{
+		"TempDirError": {
+			reason: "We should return an error if we can't create a temporary dir.",
+			s:      NewStore("/store", WithFS(afero.NewReadOnlyFs(&afero.MemMapFs{}))),
+			want:   errors.Wrap(errors.New("operation not permitted"), errMakeFnTmpDir),
+		},
+		// TODO(negz): Test that the config file and filesystem were written?
+		"Successful": {
+			reason: "We should not return an error if we successfully write the image filesystem and config file to the store.",
+			s:      NewStore("/store", WithFS(&afero.MemMapFs{})),
+			args: args{
+				ctx: context.Background(),
+				id:  "coolfn",
+				img: &fake.FakeImage{},
+			},
+			want: nil,
+		},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			err := tc.s.Write(tc.args.ctx, tc.args.id, tc.args.img)
+			if diff := cmp.Diff(tc.want, err, test.EquateErrors()); diff != "" {
+				t.Errorf("%s\ns.Write(...): -want error, +got error:\n%s", tc.reason, diff)
+			}
+		})
+	}
 }
 
 func TestUntar(t *testing.T) {
@@ -189,7 +273,7 @@ func TestUntar(t *testing.T) {
 			},
 			want: want{
 				tb:  empty.Bytes(),
-				err: errors.Wrapf(errors.New("operation not permitted"), errFmtMkdir, "/dir"),
+				err: errors.Wrap(errors.New("operation not permitted"), errMkdir),
 			},
 		},
 		"FileMkdirAllError": {
@@ -207,7 +291,7 @@ func TestUntar(t *testing.T) {
 			},
 			want: want{
 				tb:  empty.Bytes(),
-				err: errors.Wrapf(errors.New("operation not permitted"), errFmtMkdir, "/dir"),
+				err: errors.Wrap(errors.New("operation not permitted"), errMkdir),
 			},
 		},
 		"UnsupportedMode": {
@@ -228,6 +312,8 @@ func TestUntar(t *testing.T) {
 				err: errors.Errorf(errFmtUnsupportedMode, "/dev/unsupported", fs.ModeDevice),
 			},
 		},
+		// TODO(negz): Full coverage on untar? Some of the error cases relating
+		// to opening and copying files are tough to trigger, even with afero.
 	}
 
 	for name, tc := range cases {
@@ -244,4 +330,55 @@ func TestUntar(t *testing.T) {
 		})
 	}
 
+}
+
+// tarball returns a tarball of all regular files and directories in the
+// supplied filesystem. It's used to create tarballs to test the untar function.
+func tarball(t *testing.T, afs afero.Fs) *bytes.Buffer {
+	t.Helper()
+
+	b := &bytes.Buffer{}
+	tw := tar.NewWriter(b)
+
+	afero.Walk(afs, "/", func(path string, info fs.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		switch {
+		case info.Mode().IsDir():
+			hdr := &tar.Header{
+				Typeflag: tar.TypeDir,
+				Name:     path,
+			}
+			if err := tw.WriteHeader(hdr); err != nil {
+				t.Fatal(err)
+			}
+		case info.Mode().IsRegular():
+			hdr := &tar.Header{
+				Typeflag: tar.TypeReg,
+				Name:     path,
+				Mode:     int64(info.Mode()),
+				Size:     info.Size(),
+			}
+			if err := tw.WriteHeader(hdr); err != nil {
+				t.Fatal(err)
+			}
+			f, err := afs.Open(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := io.Copy(tw, f); err != nil {
+				t.Fatal(err)
+			}
+		}
+
+		return nil
+	})
+
+	if err := tw.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	return b
 }
