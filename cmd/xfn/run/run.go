@@ -1,0 +1,108 @@
+/*
+Copyright 2022 The Crossplane Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+package run
+
+import (
+	"context"
+	"io"
+	"os"
+	"time"
+
+	"kernel.org/pub/linux/libs/security/libcap/cap"
+	"sigs.k8s.io/yaml"
+
+	"github.com/crossplane/crossplane-runtime/pkg/errors"
+
+	fnv1alpha1 "github.com/crossplane/crossplane/apis/apiextensions/fn/v1alpha1"
+	"github.com/crossplane/crossplane/internal/xfn"
+)
+
+// Error strings
+const (
+	errReadFIO      = "cannot read FunctionIO"
+	errUnmarshalFIO = "cannot unmarshal FunctionIO YAML"
+	errMarshalFIO   = "cannot marshal FunctionIO YAML"
+	errWriteFIO     = "cannot write FunctionIO YAML to stdout"
+
+	errFnFailed = "function failed"
+)
+
+// Command runs a Composition function.
+type Command struct {
+	Timeout    time.Duration `help:"Maximum time for which the function may run before being killed." default:"30s"`
+	MapRootUID int           `help:"UID that will map to 0 in the function's user namespace. The following 65336 UIDs must be available. Ignored if xfn does not have CAP_SETUID and CAP_SETGID." default:"100000"`
+	MapRootGID int           `help:"GID that will map to 0 in the function's user namespace. The following 65336 GIDs must be available. Ignored if xfn does not have CAP_SETUID and CAP_SETGID." default:"100000"`
+
+	Image      string   `arg:"" help:"OCI image to run."`
+	FunctionIO *os.File `arg:"" help:"YAML encoded FunctionIO to pass to the function."`
+}
+
+// Run a Composition container function.
+func (c *Command) Run() error {
+	defer c.FunctionIO.Close() //nolint:errcheck,gosec // This file is only open for reading.
+
+	// TODO(negz): This whole thing will only run on Linux.
+
+	// If we encounter an error determining whether we have a capability we
+	// assume we don't have it.
+	pc := cap.GetProc()
+	setuid, _ := pc.GetFlag(cap.Effective, cap.SETUID)
+	setgid, _ := pc.GetFlag(cap.Effective, cap.SETGID)
+
+	rootUID := os.Getuid()
+	rootGID := os.Getgid()
+	if setuid && setgid {
+		rootUID = c.MapRootUID
+		rootGID = c.MapRootGID
+	}
+
+	// If we don't have CAP_SETUID or CAP_SETGID, we'll only be able to map our
+	// own UID and GID to root inside the user namespace. If that's the case we
+	// want to avoid chowning files (even if we have CAP_CHOWN) so that they'll
+	// all be owned by our user in the parent user namespace (and thus all be
+	// owned by the single, root, user in the child user namespace).
+
+	f := xfn.NewContainerRunner(c.Image,
+		xfn.SetUID(setuid && setgid),
+		xfn.MapToRoot(rootUID, rootGID))
+
+	ctx, cancel := context.WithTimeout(context.Background(), c.Timeout)
+	defer cancel()
+
+	yb, err := io.ReadAll(c.FunctionIO)
+	if err != nil {
+		return errors.Wrap(err, errReadFIO)
+	}
+
+	in := &fnv1alpha1.FunctionIO{}
+	if err := yaml.Unmarshal(yb, in); err != nil {
+		return errors.Wrap(err, errUnmarshalFIO)
+	}
+
+	out, err := f.Run(ctx, in)
+	if err != nil {
+		return errors.Wrap(err, errFnFailed)
+	}
+
+	yb, err = yaml.Marshal(out)
+	if err != nil {
+		return errors.Wrap(err, errMarshalFIO)
+	}
+
+	_, err = os.Stdout.Write(yb)
+	return errors.Wrap(err, errWriteFIO)
+}
