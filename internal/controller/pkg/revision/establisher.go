@@ -94,8 +94,6 @@ type currentDesired struct {
 // Establish checks that control or ownership of resources can be established by
 // parent, then establishes it.
 func (e *APIEstablisher) Establish(ctx context.Context, objs []runtime.Object, parent v1.PackageRevision, control bool) ([]xpv1.TypedReference, error) { // nolint:gocyclo
-	allObjs := []currentDesired{}
-	resourceRefs := []xpv1.TypedReference{}
 	var webhookTLSCert []byte
 	if parent.GetWebhookTLSSecretName() != nil {
 		s := &corev1.Secret{}
@@ -108,139 +106,149 @@ func (e *APIEstablisher) Establish(ctx context.Context, objs []runtime.Object, p
 		}
 		webhookTLSCert = s.Data["tls.crt"]
 	}
+
+	allObjs := []currentDesired{}
 	for _, res := range objs {
-		// Assert desired object to resource.Object so that we can access its
-		// metadata.
-		d, ok := res.(resource.Object)
-		if !ok {
-			return nil, errors.New(errAssertResourceObj)
+		cd, err := e.dryRun(ctx, res, parent, webhookTLSCert, control)
+		if err != nil {
+			return nil, err // TODO(negz): Wrap?
 		}
-
-		// The generated webhook configurations have a static hard-coded name
-		// that the developers of the providers can't affect. Here, we make sure
-		// to distinguish one from the other by setting the name to the parent
-		// since there is always a single ValidatingWebhookConfiguration and/or
-		// single MutatingWebhookConfiguration object in a provider package.
-		// See https://github.com/kubernetes-sigs/controller-tools/issues/658
-		switch conf := res.(type) {
-		case *admv1.ValidatingWebhookConfiguration:
-			if len(webhookTLSCert) == 0 {
-				continue
-			}
-			if pkgRef, ok := GetPackageOwnerReference(parent); ok {
-				conf.SetName(fmt.Sprintf("crossplane-%s-%s", strings.ToLower(pkgRef.Kind), pkgRef.Name))
-			}
-			for i := range conf.Webhooks {
-				conf.Webhooks[i].ClientConfig.CABundle = webhookTLSCert
-				if conf.Webhooks[i].ClientConfig.Service == nil {
-					conf.Webhooks[i].ClientConfig.Service = &admv1.ServiceReference{}
-				}
-				conf.Webhooks[i].ClientConfig.Service.Name = parent.GetName()
-				conf.Webhooks[i].ClientConfig.Service.Namespace = e.namespace
-				conf.Webhooks[i].ClientConfig.Service.Port = pointer.Int32(webhookPort)
-			}
-		case *admv1.MutatingWebhookConfiguration:
-			if len(webhookTLSCert) == 0 {
-				continue
-			}
-			if pkgRef, ok := GetPackageOwnerReference(parent); ok {
-				conf.SetName(fmt.Sprintf("crossplane-%s-%s", strings.ToLower(pkgRef.Kind), pkgRef.Name))
-			}
-			for i := range conf.Webhooks {
-				conf.Webhooks[i].ClientConfig.CABundle = webhookTLSCert
-				if conf.Webhooks[i].ClientConfig.Service == nil {
-					conf.Webhooks[i].ClientConfig.Service = &admv1.ServiceReference{}
-				}
-				conf.Webhooks[i].ClientConfig.Service.Name = parent.GetName()
-				conf.Webhooks[i].ClientConfig.Service.Namespace = e.namespace
-				conf.Webhooks[i].ClientConfig.Service.Port = pointer.Int32(webhookPort)
-			}
-		case *extv1.CustomResourceDefinition:
-			if conf.Spec.Conversion != nil && conf.Spec.Conversion.Strategy == extv1.WebhookConverter {
-				if len(webhookTLSCert) == 0 {
-					return nil, errors.New(errConversionWithNoWebhookCA)
-				}
-				if conf.Spec.Conversion.Webhook == nil {
-					conf.Spec.Conversion.Webhook = &extv1.WebhookConversion{}
-				}
-				if conf.Spec.Conversion.Webhook.ClientConfig == nil {
-					conf.Spec.Conversion.Webhook.ClientConfig = &extv1.WebhookClientConfig{}
-				}
-				if conf.Spec.Conversion.Webhook.ClientConfig.Service == nil {
-					conf.Spec.Conversion.Webhook.ClientConfig.Service = &extv1.ServiceReference{}
-				}
-				conf.Spec.Conversion.Webhook.ClientConfig.CABundle = webhookTLSCert
-				conf.Spec.Conversion.Webhook.ClientConfig.Service.Name = parent.GetName()
-				conf.Spec.Conversion.Webhook.ClientConfig.Service.Namespace = e.namespace
-				conf.Spec.Conversion.Webhook.ClientConfig.Service.Port = pointer.Int32(webhookPort)
-			}
-		}
-
-		// Make a copy of the desired object to be populated with existing
-		// object, if it exists.
-		copy := res.DeepCopyObject()
-		current, ok := copy.(client.Object)
-		if !ok {
-			return nil, errors.New(errAssertClientObj)
-		}
-		err := e.client.Get(ctx, types.NamespacedName{Name: d.GetName(), Namespace: d.GetNamespace()}, current)
-		if resource.IgnoreNotFound(err) != nil {
-			return nil, err
-		}
-
-		// If resource does not already exist, we must attempt to dry run create
-		// it.
-		if kerrors.IsNotFound(err) {
-			// Add to objects as not existing.
-			allObjs = append(allObjs, currentDesired{
-				Desired: d,
-				Current: nil,
-				Exists:  false,
-			})
-			// We will not create a resource if we are not going to control it,
-			// so we don't need to check with dry run.
-			if control {
-				if err := e.create(ctx, d, parent, client.DryRunAll); err != nil {
-					return nil, err
-				}
-			}
-			continue
-		}
-
-		c := current.(resource.Object)
-		// Add to objects as existing.
-		allObjs = append(allObjs, currentDesired{
-			Desired: d,
-			Current: c,
-			Exists:  true,
-		})
-
-		if err := e.update(ctx, c, d, parent, control, client.DryRunAll); err != nil {
-			return nil, err
+		// In some situations there will be no error but also no work to do.
+		if cd != nil {
+			allObjs = append(allObjs, *cd)
 		}
 	}
 
+	resourceRefs := []xpv1.TypedReference{}
 	for _, cd := range allObjs {
-		if !cd.Exists {
-			// Only create a missing resource if we are going to control it.
-			// This prevents an inactive revision from racing to create a
-			// resource before an active revision of the same parent.
-			if control {
-				if err := e.create(ctx, cd.Desired, parent); err != nil {
-					return nil, err
-				}
-			}
-			resourceRefs = append(resourceRefs, *meta.TypedReferenceTo(cd.Desired, cd.Desired.GetObjectKind().GroupVersionKind()))
-			continue
+		ref, err := e.createOrUpdate(ctx, cd, parent, control)
+		if err != nil {
+			return nil, err // TODO(negz): Wrap?
 		}
-
-		if err := e.update(ctx, cd.Current, cd.Desired, parent, control); err != nil {
-			return nil, err
-		}
-		resourceRefs = append(resourceRefs, *meta.TypedReferenceTo(cd.Desired, cd.Desired.GetObjectKind().GroupVersionKind()))
+		resourceRefs = append(resourceRefs, *ref)
 	}
 
 	return resourceRefs, nil
+}
+
+func (e *APIEstablisher) dryRun(ctx context.Context, res runtime.Object, parent v1.PackageRevision, webhookTLSCert []byte, control bool) (*currentDesired, error) {
+	// Assert desired object to resource.Object so that we can access its
+	// metadata.
+	d, ok := res.(resource.Object)
+	if !ok {
+		return nil, errors.New(errAssertResourceObj)
+	}
+
+	// TODO(negz): Most of this function is webhook handling. Can we break it
+	// out into its own function?
+
+	// The generated webhook configurations have a static hard-coded name
+	// that the developers of the providers can't affect. Here, we make sure
+	// to distinguish one from the other by setting the name to the parent
+	// since there is always a single ValidatingWebhookConfiguration and/or
+	// single MutatingWebhookConfiguration object in a provider package.
+	// See https://github.com/kubernetes-sigs/controller-tools/issues/658
+	switch conf := res.(type) {
+	case *admv1.ValidatingWebhookConfiguration:
+		if len(webhookTLSCert) == 0 {
+			// TODO(negz): I guess we skip?
+			return nil, nil
+		}
+		if pkgRef, ok := GetPackageOwnerReference(parent); ok {
+			conf.SetName(fmt.Sprintf("crossplane-%s-%s", strings.ToLower(pkgRef.Kind), pkgRef.Name))
+		}
+		for i := range conf.Webhooks {
+			conf.Webhooks[i].ClientConfig.CABundle = webhookTLSCert
+			if conf.Webhooks[i].ClientConfig.Service == nil {
+				conf.Webhooks[i].ClientConfig.Service = &admv1.ServiceReference{}
+			}
+			conf.Webhooks[i].ClientConfig.Service.Name = parent.GetName()
+			conf.Webhooks[i].ClientConfig.Service.Namespace = e.namespace
+			conf.Webhooks[i].ClientConfig.Service.Port = pointer.Int32(webhookPort)
+		}
+	case *admv1.MutatingWebhookConfiguration:
+		if len(webhookTLSCert) == 0 {
+			// TODO(negz): I guess we skip?
+			return nil, nil
+		}
+		if pkgRef, ok := GetPackageOwnerReference(parent); ok {
+			conf.SetName(fmt.Sprintf("crossplane-%s-%s", strings.ToLower(pkgRef.Kind), pkgRef.Name))
+		}
+		for i := range conf.Webhooks {
+			conf.Webhooks[i].ClientConfig.CABundle = webhookTLSCert
+			if conf.Webhooks[i].ClientConfig.Service == nil {
+				conf.Webhooks[i].ClientConfig.Service = &admv1.ServiceReference{}
+			}
+			conf.Webhooks[i].ClientConfig.Service.Name = parent.GetName()
+			conf.Webhooks[i].ClientConfig.Service.Namespace = e.namespace
+			conf.Webhooks[i].ClientConfig.Service.Port = pointer.Int32(webhookPort)
+		}
+	case *extv1.CustomResourceDefinition:
+		if conf.Spec.Conversion != nil && conf.Spec.Conversion.Strategy == extv1.WebhookConverter {
+			if len(webhookTLSCert) == 0 {
+				return nil, errors.New(errConversionWithNoWebhookCA)
+			}
+			if conf.Spec.Conversion.Webhook == nil {
+				conf.Spec.Conversion.Webhook = &extv1.WebhookConversion{}
+			}
+			if conf.Spec.Conversion.Webhook.ClientConfig == nil {
+				conf.Spec.Conversion.Webhook.ClientConfig = &extv1.WebhookClientConfig{}
+			}
+			if conf.Spec.Conversion.Webhook.ClientConfig.Service == nil {
+				conf.Spec.Conversion.Webhook.ClientConfig.Service = &extv1.ServiceReference{}
+			}
+			conf.Spec.Conversion.Webhook.ClientConfig.CABundle = webhookTLSCert
+			conf.Spec.Conversion.Webhook.ClientConfig.Service.Name = parent.GetName()
+			conf.Spec.Conversion.Webhook.ClientConfig.Service.Namespace = e.namespace
+			conf.Spec.Conversion.Webhook.ClientConfig.Service.Port = pointer.Int32(webhookPort)
+		}
+	}
+
+	// Make a copy of the desired object to be populated with existing
+	// object, if it exists.
+	copy := res.DeepCopyObject()
+	current, ok := copy.(client.Object)
+	if !ok {
+		return nil, errors.New(errAssertClientObj)
+	}
+	err := e.client.Get(ctx, types.NamespacedName{Name: d.GetName(), Namespace: d.GetNamespace()}, current)
+	if resource.IgnoreNotFound(err) != nil {
+		return nil, err
+	}
+
+	// If resource does not already exist, we must attempt to dry run create it.
+	if kerrors.IsNotFound(err) {
+		// Add to objects as not existing.
+
+		// We will not create a resource if we are not going to control it,
+		// so we don't need to check with dry run.
+		if !control {
+			return &currentDesired{Desired: d, Current: nil, Exists: false}, nil
+		}
+
+		err := e.create(ctx, d, parent, client.DryRunAll)
+		return &currentDesired{Desired: d, Current: nil, Exists: false}, err
+	}
+
+	// Add to objects as existing.
+	err = e.update(ctx, current, d, parent, control, client.DryRunAll)
+	return &currentDesired{Desired: d, Current: current, Exists: true}, err
+}
+
+func (e *APIEstablisher) createOrUpdate(ctx context.Context, cd currentDesired, parent v1.PackageRevision, control bool) (*xpv1.TypedReference, error) {
+	if cd.Exists {
+		err := e.update(ctx, cd.Current, cd.Desired, parent, control)
+		return meta.TypedReferenceTo(cd.Desired, cd.Desired.GetObjectKind().GroupVersionKind()), err
+	}
+
+	// Only create a missing resource if we are going to control it. This
+	// prevents an inactive revision from racing to create a resource before an
+	// active revision of the same parent.
+	if !control {
+		return meta.TypedReferenceTo(cd.Desired, cd.Desired.GetObjectKind().GroupVersionKind()), nil
+	}
+	err := e.create(ctx, cd.Desired, parent)
+	return meta.TypedReferenceTo(cd.Desired, cd.Desired.GetObjectKind().GroupVersionKind()), err
 }
 
 func (e *APIEstablisher) create(ctx context.Context, obj resource.Object, parent resource.Object, opts ...client.CreateOption) error {
