@@ -26,7 +26,6 @@ import (
 	"strings"
 
 	securejoin "github.com/cyphar/filepath-securejoin"
-	"golang.org/x/sys/unix"
 
 	"github.com/crossplane/crossplane-runtime/pkg/errors"
 )
@@ -264,18 +263,6 @@ func ExtractSymlink(h *tar.Header, _ io.Reader, path string) error {
 	// by SecureJoin above to prevent malicious writes during the untar process,
 	// and will be evaluated relative to root during function execution.
 	return errors.Wrap(os.Symlink(h.Linkname, path), errSymlink)
-}
-
-// ExtractFIFO is a HeaderHandler that creates a FIFO at the supplied path per
-// the supplied tar header.
-func ExtractFIFO(h *tar.Header, _ io.Reader, path string) error {
-	// We won't have CAP_MKNOD in a user namespace created by a user who doesn't
-	// have CAP_MKNOD in the initial/root user namespace, but we don't need it
-	// to use mknod to create a FIFO.
-	// https://man7.org/linux/man-pages/man2/mknod.2.html
-	mode := uint32(h.Mode&0777) | unix.S_IFIFO
-	dev := unix.Mkdev(uint32(h.Devmajor), uint32(h.Devminor))
-	return errors.Wrap(unix.Mknod(path, mode, int(dev)), "cannot create FIFO")
 }
 
 // ExtractFile is a HeaderHandler that creates a regular file at the supplied
