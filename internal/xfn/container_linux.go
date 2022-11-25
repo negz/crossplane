@@ -78,13 +78,9 @@ func (r *ContainerRunner) Run(ctx context.Context, in *fnv1alpha1.FunctionIO) (*
 		scheduler might move the goroutine to another.
 
 		Therefore we execute a small shim - xfn spark - in a new user and mount
-		namespace. spark sets up the overlayfs if the Kernel supports it.
-		Otherwise it falls back to making a copy of the cached rootfs. spark
-		then executes an OCI runtime which creates another layer of namespaces
-		in order to actually execute the function.
-
-		We don't need to cleanup the mounts spark creates. They will be removed
-		automatically along with their mount namespace when spark exits.
+		namespace. spark sets up the overlayfs if the Kernel supports it. It
+		then executes an OCI runtime which creates further namespaces in order
+		to actually execute the function.
 	*/
 	cmd := exec.CommandContext(ctx, os.Args[0], spark, "--cache-dir="+r.cache, r.image) //nolint:gosec // We're intentionally executing with variable input.
 	cmd.SysProcAttr = &syscall.SysProcAttr{

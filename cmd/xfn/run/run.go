@@ -57,6 +57,8 @@ type Command struct {
 func (c *Command) Run() error {
 	defer c.FunctionIO.Close() //nolint:errcheck,gosec // This file is only open for reading.
 
+	// If we don't have CAP_SETUID or CAP_SETGID, we'll only be able to map our
+	// own UID and GID to root inside the user namespace.
 	rootUID := os.Getuid()
 	rootGID := os.Getgid()
 	setuid := xfn.HasCapSetUID() && xfn.HasCapSetGID() // We're using 'setuid' as shorthand for both here.
@@ -64,12 +66,6 @@ func (c *Command) Run() error {
 		rootUID = c.MapRootUID
 		rootGID = c.MapRootGID
 	}
-
-	// If we don't have CAP_SETUID or CAP_SETGID, we'll only be able to map our
-	// own UID and GID to root inside the user namespace. If that's the case we
-	// want to avoid chowning files (even if we have CAP_CHOWN) so that they'll
-	// all be owned by our user in the parent user namespace (and thus all be
-	// owned by the single, root, user in the child user namespace).
 
 	f := xfn.NewContainerRunner(c.Image,
 		xfn.SetUID(setuid),
