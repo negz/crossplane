@@ -53,7 +53,7 @@ func NewUncompressedStore(root string) (*UncompressedStore, error) {
 
 	s := &UncompressedStore{
 		root: root,
-		e:    &StackingLayerExtractor{h: NewWhiteoutHandler(HeaderHandlerFn(Extract))},
+		e:    NewStackingLayerExtractor(NewWhiteoutHandler(NewExtractHandler())),
 	}
 	return s, nil
 }

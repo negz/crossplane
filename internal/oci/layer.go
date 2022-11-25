@@ -30,6 +30,27 @@ import (
 	"github.com/crossplane/crossplane-runtime/pkg/errors"
 )
 
+// Error strings.
+const (
+	errAdvanceTarball   = "cannot advance to next entry in tarball"
+	errExtractTarHeader = "cannot extract tar header"
+	errEvalSymlinks     = "cannot evaluate symlinks"
+	errMkdir            = "cannot make directory"
+	errLstat            = "cannot lstat directory"
+	errChmod            = "cannot chmod path"
+	errSymlink          = "cannot create symlink"
+	errOpenFile         = "cannot open file"
+	errCopyFile         = "cannot copy file"
+	errCloseFile        = "cannot close file"
+
+	errFmtHandleTarHeader = "cannot handle tar header for %q"
+	errFmtWhiteoutFile    = "cannot whiteout file %q"
+	errFmtWhiteoutDir     = "cannot whiteout opaque directory %q"
+	errFmtUnsupportedType = "tarball contained header %q with unknown type %q"
+	errFmtNotDir          = "path %q exists but is not a directory"
+	errFmtSize            = "wrote %d bytes to %q; expected %d"
+)
+
 // NOTE(negz): Initially we used afero to allow mocking the filesystem, but we
 // need to do a lot of things afero doesn't support on its mock filesystems
 // (symlinks, mounts etc) which made using it more awkward than it was worth.
@@ -58,10 +79,16 @@ func (fn HeaderHandlerFn) Handle(h *tar.Header, tr io.Reader, path string) error
 	return fn(h, tr, path)
 }
 
-// A StackingLayerExtractor extracts an OCI layer by 'stacking' it atop the
-// supplied root directory.
+// A StackingLayerExtractor is a LayerExtractor that extracts an OCI layer by
+// 'stacking' it atop the supplied root directory.
 type StackingLayerExtractor struct {
 	h HeaderHandler
+}
+
+// NewStackingLayerExtractor extracts an OCI layer by 'stacking' it atop the
+// supplied root directory.
+func NewStackingLayerExtractor(h HeaderHandler) *StackingLayerExtractor {
+	return &StackingLayerExtractor{h: h}
 }
 
 // Apply calls the StackingLayerExtractor's HeaderHandler for each file in the
@@ -98,7 +125,7 @@ func (e *StackingLayerExtractor) Apply(ctx context.Context, tb io.Reader, root s
 		}
 
 		if err := e.h.Handle(hdr, tr, path); err != nil {
-			return errors.Wrapf(err, "could not handle tar header for %q", hdr.Name)
+			return errors.Wrapf(err, errFmtHandleTarHeader, hdr.Name)
 		}
 	}
 
@@ -152,7 +179,7 @@ func (w *WhiteoutHandler) Handle(h *tar.Header, tr io.Reader, path string) error
 			return nil
 		}
 
-		return errors.Wrapf(os.RemoveAll(whiteout), "cannot whiteout file %q", whiteout)
+		return errors.Wrapf(os.RemoveAll(whiteout), errFmtWhiteoutFile, whiteout)
 	}
 
 	// Handle an opaque directory. These files indicate that all siblings in
@@ -176,50 +203,51 @@ func (w *WhiteoutHandler) Handle(h *tar.Header, tr io.Reader, path string) error
 		return os.RemoveAll(path)
 	})
 
-	return errors.Wrapf(err, "cannot whiteout dir %q", dir)
+	return errors.Wrapf(err, errFmtWhiteoutDir, dir)
 }
 
-// TODO(negz): Make this an ExtractHandler struct, with pluggable handlers for
-// each type - or perhaps a map of types to handlers?
+// An ExtractHandler extracts from a tarball per the supplied tar header by
+// calling a handler that knows how to extract the type of file.
+type ExtractHandler struct {
+	handler map[byte]HeaderHandler
+}
 
-// Extract is a HeaderHandler that creates a file at the supplied path per the
-// supplied tar header. It is not aware of OCI whiteout files, and will only
-// create files that can be created inside an unprivileged user namespace.
-func Extract(h *tar.Header, tr io.Reader, path string) error {
-	mode := h.FileInfo().Mode()
+// NewExtractHandler returns a HeaderHandler that extracts from a tarball per
+// the supplied tar header by calling a handler that knows how to extract the
+// type of file.
+func NewExtractHandler() *ExtractHandler {
+	return &ExtractHandler{handler: map[byte]HeaderHandler{
+		tar.TypeDir:     HeaderHandlerFn(ExtractDir),
+		tar.TypeSymlink: HeaderHandlerFn(ExtractSymlink),
+		tar.TypeReg:     HeaderHandlerFn(ExtractFile),
+		tar.TypeFifo:    HeaderHandlerFn(ExtractFIFO),
 
+		// TODO(negz): Don't extract hard links as symlinks. Creating an actual
+		// hard link would require us to securely join the path of the 'root'
+		// directory we're untarring into with h.Linkname, but we don't
+		// currently plumb the root directory down to this level.
+		tar.TypeLink: HeaderHandlerFn(ExtractSymlink),
+	}}
+}
+
+// Handle creates a file at the supplied path per the supplied tar header.
+func (e *ExtractHandler) Handle(h *tar.Header, tr io.Reader, path string) error {
 	// ExtractDir should correct these permissions.
 	if err := os.MkdirAll(filepath.Dir(path), 0750); err != nil {
 		return errors.Wrap(err, errMkdir)
 	}
 
-	switch h.Typeflag {
-	case tar.TypeDir:
-		if err := ExtractDir(h, tr, path); err != nil {
-			return errors.Wrap(err, "cannot extract directory")
-		}
-	// TODO(negz): Don't extract hard links as symlinks. Creating an actual hard
-	// link would require us to securely join the path of the 'root' directory
-	// we're untarring into with h.Linkname, but we don't currently plumb the
-	// root directory down to this level.
-	case tar.TypeSymlink, tar.TypeLink:
-		if err := ExtractSymlink(h, tr, path); err != nil {
-			return errors.Wrap(err, "cannot extract symlink")
-		}
-	case tar.TypeReg:
-		if err := ExtractFile(h, tr, path); err != nil {
-			return errors.Wrap(err, "cannot extract file")
-		}
-	case tar.TypeFifo:
-		if err := ExtractFIFO(h, tr, path); err != nil {
-			return errors.Wrap(err, "cannot extract fifo")
-		}
-	default:
+	hd, ok := e.handler[h.Typeflag]
+	if !ok {
 		// Better to return an error than to write a partial layer. Note that
 		// tar.TypeBlock and tar.TypeChar in particular are unsupported because
 		// they can't be created without CAP_MKNOD in the 'root' user namespace
 		// per https://man7.org/linux/man-pages/man7/user_namespaces.7.html
-		return errors.Errorf(errFmtUnsupportedMode, h.Name, mode)
+		return errors.Errorf(errFmtUnsupportedType, h.Name, h.Typeflag)
+	}
+
+	if err := hd.Handle(h, tr, path); err != nil {
+		return errors.Wrap(err, errExtractTarHeader)
 	}
 
 	// We expect to have CAP_CHOWN (inside a user namespace) when running
@@ -248,11 +276,17 @@ func ExtractDir(h *tar.Header, _ io.Reader, path string) error {
 		return errors.Wrap(os.MkdirAll(path, mode.Perm()), errMkdir)
 	}
 	if err != nil {
-		return errors.Wrapf(err, "cannot determine whether path %q already exists", path)
+		return errors.Wrap(err, errLstat)
 	}
+
 	if !fi.IsDir() {
-		return errors.Errorf("path %q exists but is not a directory", path)
+		return errors.Errorf(errFmtNotDir, path)
 	}
+
+	// We've been asked to extract a directory that exists; just try to ensure
+	// it has the correct permissions. It could be that we saw a file in this
+	// directory before we saw the directory itself, and created it with the
+	// file's permissions in a MkdirAll call.
 	return errors.Wrap(os.Chmod(path, mode.Perm()), errChmod)
 }
 

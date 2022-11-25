@@ -27,7 +27,9 @@ import (
 )
 
 const (
-	errNoCmd = "function OCI image must specify entrypoint and/or cmd"
+	errCreateFile = "cannot create file"
+	errWriteFile  = "cannot write file"
+	errNoCmd      = "function OCI image must specify entrypoint and/or cmd"
 )
 
 // ReadRuntimeConfig produces an OCI runtime spec (i.e. config.json) from the

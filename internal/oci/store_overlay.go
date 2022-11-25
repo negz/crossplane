@@ -28,38 +28,6 @@ import (
 	"github.com/crossplane/crossplane-runtime/pkg/errors"
 )
 
-// Error strings.
-const (
-	errAdvanceTarball   = "cannot advance to next entry in tarball"
-	errCloseFsTarball   = "cannot close function filesystem tarball"
-	errFetchFnOCIConfig = "cannot fetch function OCI config"
-	errUntarFn          = "cannot unarchive function tarball"
-	errMkdir            = "cannot make directory"
-	errSymlink          = "cannot create symlink"
-	errEvalSymlinks     = "cannot evaluate symlinks"
-	errOpenFile         = "cannot open file"
-	errCopyFile         = "cannot copy file"
-	errCloseFile        = "cannot close file"
-	errCreateFile       = "cannot create file"
-	errWriteFile        = "cannot write file"
-	errMakeTmpDir       = "cannot make temporary directory"
-	errParseImageConfig = "cannot parse OCI image config"
-	errNewRuntimeConfig = "cannot create new OCI runtime config"
-	errRemoveBundle     = "cannot remove OCI bundle from store"
-	errChown            = "cannot chown path"
-	errChmod            = "cannot chmod path"
-	errFindImage        = "cannot find OCI image in cache"
-	errDirExists        = "cannot determine whether dir exists"
-	errConfigRoot       = "OCI config file must specify root.path relative to the root of the bundle"
-	errSetupRootFS      = "cannot setup OCI bundle rootfs"
-	errTeardownRootFS   = "cannot tear down OCI bundle rootfs"
-
-	errFmtSize            = "wrote %d bytes to %q; expected %d"
-	errFmtUnsupportedMode = "tarball contained file %q with unknown file type: %q"
-	errFmtRenameTmpDir    = "cannot move temporary directory %q to %q"
-	errFmtRunExists       = "bundle for run ID %q already exists"
-)
-
 // Common overlayfs directories.
 const (
 	overlayDirTmpfs  = "tmpfs"
@@ -119,7 +87,7 @@ func NewOverlayStore(root string) (*OverlayStore, error) {
 
 	s := &OverlayStore{
 		root: root,
-		e:    &StackingLayerExtractor{h: NewWhiteoutHandler(HeaderHandlerFn(Extract))},
+		e:    NewStackingLayerExtractor(NewWhiteoutHandler(NewExtractHandler())),
 	}
 	return s, nil
 }
