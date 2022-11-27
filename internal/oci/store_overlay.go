@@ -115,6 +115,9 @@ func (s *OverlayStore) BundleContainer(ctx context.Context, i ociv1.Image, id st
 		lowerPaths[i] = s.layerPath(m.Layers[i].Digest.Hex)
 	}
 
+	// TODO(negz): Setup the rootfs before writing the runtime config; we may
+	// need to peek into /etc/passwd to resolve a username.
+
 	// Create an OCI runtime config file from our cached OCI image config file.
 	// We do this every time we run the function because in future it's likely
 	// that we'll want to derive the OCI runtime config file from both the OCI

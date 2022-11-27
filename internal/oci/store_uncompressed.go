@@ -93,6 +93,9 @@ func (s *UncompressedStore) BundleContainer(ctx context.Context, i ociv1.Image, 
 		return UncompressedBundle{}, errors.Wrap(err, "cannot create rootfs dir")
 	}
 
+	// TODO(negz): Setup the rootfs before writing the runtime config; we may
+	// need to peek into /etc/passwd to resolve a username.
+
 	if err := WriteRuntimeConfig(filepath.Join(path, config), cfg); err != nil {
 		_ = os.RemoveAll(path)
 		return UncompressedBundle{}, errors.Wrap(err, "cannot write OCI runtime config")
