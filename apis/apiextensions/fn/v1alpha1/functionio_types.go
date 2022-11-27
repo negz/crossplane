@@ -57,8 +57,8 @@ type FunctionIO struct {
 
 	// Items is a list of Crossplane resources - either XRs or MRs.
 	//
-	// A function will read this field in the input ResourceList and populate
-	// this field in the output ResourceList.
+	// A function will read this field in the input FunctionIO and populate
+	// this field in the output FunctionIO.
 	// +kubebuilder:validation:EmbeddedResource
 	// +kubebuilder:pruning:PreserveUnknownFields
 	Items []runtime.RawExtension `json:"items"`

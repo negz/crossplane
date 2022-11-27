@@ -14,10 +14,6 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// TODO(negz): If we want to be compatible with KRM functions - i.e. be a true
-// superset of KRM functions we should probably use config.kubernetes.io per
-// https://github.com/kubernetes-sigs/kustomize/blob/master/cmd/config/docs/api-conventions/functions-spec.md
-
 // Package v1alpha1 contains meta types used to invoke XRM functions.
 // +kubebuilder:object:generate=true
 // +groupName=fn.apiextensions.crossplane.io
