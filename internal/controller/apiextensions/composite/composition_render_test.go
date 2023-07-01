@@ -24,7 +24,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/utils/pointer"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -35,24 +34,18 @@ import (
 	"github.com/crossplane/crossplane-runtime/pkg/resource/unstructured/composed"
 	"github.com/crossplane/crossplane-runtime/pkg/test"
 
-	v1 "github.com/crossplane/crossplane/apis/apiextensions/v1"
-	env "github.com/crossplane/crossplane/internal/controller/apiextensions/composite/environment"
 	"github.com/crossplane/crossplane/internal/xcrd"
 )
 
-func TestRenderComposedResourceBase(t *testing.T) {
-	base := runtime.RawExtension{Raw: []byte(`{"apiVersion": "example.org/v1", "kind": "Potato", "spec": {"cool": true}}`)}
+func TestRenderFromJSON(t *testing.T) {
 	errInvalidChar := json.Unmarshal([]byte("olala"), &fake.Composed{})
 
 	type args struct {
-		ctx context.Context
-		xr  resource.Composite
-		cd  resource.Composed
-		t   v1.ComposedTemplate
-		env *env.Environment
+		o    resource.Object
+		data []byte
 	}
 	type want struct {
-		cd  resource.Composed
+		o   resource.Object
 		err error
 	}
 	cases := map[string]struct {
@@ -60,106 +53,69 @@ func TestRenderComposedResourceBase(t *testing.T) {
 		args
 		want
 	}{
-		"NoNamePrefixLabel": {
-			reason: "We should return an error if the XR is missing the name prefix label",
+		"InvalidData": {
+			reason: "We should return an error if the data can't be unmarshalled",
 			args: args{
-				xr: &fake.Composite{},
-				cd: &fake.Composed{},
-				t:  v1.ComposedTemplate{Base: base},
+				o:    &fake.Composed{},
+				data: []byte("olala"),
 			},
 			want: want{
-				cd:  &fake.Composed{},
-				err: errors.New(errNamePrefix),
+				o:   &fake.Composed{},
+				err: errors.Wrap(errInvalidChar, errUnmarshalJSON),
 			},
 		},
-		"InvalidBaseTemplate": {
-			reason: "We should return an error if the base template can't be unmarshalled",
-			args: args{
-				xr: &fake.Composite{
-					ObjectMeta: metav1.ObjectMeta{
-						Labels: map[string]string{
-							xcrd.LabelKeyNamePrefixForComposed: "ola",
-						},
-					},
-				},
-				cd: &fake.Composed{},
-				t:  v1.ComposedTemplate{Base: runtime.RawExtension{Raw: []byte("olala")}},
-			},
-			want: want{
-				cd:  &fake.Composed{},
-				err: errors.Wrap(errInvalidChar, errUnmarshal),
-			},
-		},
-		"ExistingComposedResourceGVKChanged": {
+		"ExistingGVKChanged": {
 			reason: "We should return an error if unmarshalling the base template changed the composed resource's group, version, or kind",
 			args: args{
-				xr: &fake.Composite{
-					ObjectMeta: metav1.ObjectMeta{
-						Labels: map[string]string{
-							xcrd.LabelKeyNamePrefixForComposed: "ola",
-						},
-					},
-				},
-				cd: composed.New(composed.FromReference(corev1.ObjectReference{
+				o: composed.New(composed.FromReference(corev1.ObjectReference{
 					APIVersion: "example.org/v1",
 					Kind:       "Potato",
 				})),
-				t: v1.ComposedTemplate{Base: runtime.RawExtension{Raw: []byte(`{"apiVersion": "example.org/v1", "kind": "Different"}`)}},
+				data: []byte(`{"apiVersion": "example.org/v1", "kind": "Different"}`),
 			},
 			want: want{
-				cd: composed.New(composed.FromReference(corev1.ObjectReference{
+				o: composed.New(composed.FromReference(corev1.ObjectReference{
 					APIVersion: "example.org/v1",
 					Kind:       "Different",
 				})),
-				err: errors.New(errKindChanged),
+				err: errors.Errorf(errFmtKindChanged, "example.org/v1, Kind=Potato", "example.org/v1, Kind=Different"),
 			},
 		},
 		"NewComposedResource": {
 			reason: "A valid base template should apply successfully to a new (empty) composed resource",
 			args: args{
-				xr: &fake.Composite{
-					ObjectMeta: metav1.ObjectMeta{
-						Labels: map[string]string{
-							xcrd.LabelKeyNamePrefixForComposed: "ola",
-						},
-					},
-				},
-				cd: &fake.Composed{},
-				t:  v1.ComposedTemplate{Base: base},
+				o:    composed.New(),
+				data: []byte(`{"apiVersion": "example.org/v1", "kind": "Potato", "spec": {"cool": true}}`),
 			},
 			want: want{
-				cd: &fake.Composed{
-					ObjectMeta: metav1.ObjectMeta{
-						GenerateName: "ola-",
+				o: &composed.Unstructured{Unstructured: unstructured.Unstructured{
+					Object: map[string]any{
+						"apiVersion": "example.org/v1",
+						"kind":       "Potato",
+						"spec": map[string]any{
+							"cool": true,
+						},
 					},
-				},
+				}},
 			},
 		},
 		"ExistingComposedResource": {
 			reason: "A valid base template should apply successfully to a new (empty) composed resource",
 			args: args{
-				xr: &fake.Composite{
-					ObjectMeta: metav1.ObjectMeta{
-						Labels: map[string]string{
-							xcrd.LabelKeyNamePrefixForComposed: "ola",
-						},
-					},
-				},
-				cd: composed.New(composed.FromReference(corev1.ObjectReference{
+				o: composed.New(composed.FromReference(corev1.ObjectReference{
 					APIVersion: "example.org/v1",
 					Kind:       "Potato",
 					Name:       "ola-superrandom",
 				})),
-				t: v1.ComposedTemplate{Base: base},
+				data: []byte(`{"apiVersion": "example.org/v1", "kind": "Potato", "spec": {"cool": true}}`),
 			},
 			want: want{
-				cd: &composed.Unstructured{Unstructured: unstructured.Unstructured{
+				o: &composed.Unstructured{Unstructured: unstructured.Unstructured{
 					Object: map[string]any{
 						"apiVersion": "example.org/v1",
 						"kind":       "Potato",
 						"metadata": map[string]any{
-							"generateName": "ola-",
-							"name":         "ola-superrandom",
+							"name": "ola-superrandom",
 						},
 						"spec": map[string]any{
 							"cool": true,
@@ -171,12 +127,12 @@ func TestRenderComposedResourceBase(t *testing.T) {
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
-			err := RenderComposedResourceBase(tc.args.ctx, tc.args.xr, tc.args.cd, tc.args.t, tc.args.env)
+			err := RenderFromJSON(tc.args.o, tc.args.data)
 			if diff := cmp.Diff(tc.want.err, err, test.EquateErrors()); diff != "" {
-				t.Errorf("\n%s\nRenderComposedResourceBase(...): -want error, +got error:\n%s", tc.reason, diff)
+				t.Errorf("\n%s\nRenderFromJSON(...): -want error, +got error:\n%s", tc.reason, diff)
 			}
-			if diff := cmp.Diff(tc.want.cd, tc.args.cd); diff != "" {
-				t.Errorf("\n%s\nRenderComposedResourceBase(...): -want, +got:\n%s", tc.reason, diff)
+			if diff := cmp.Diff(tc.want.o, tc.args.o); diff != "" {
+				t.Errorf("\n%s\nRenderFromJSON(...): -want, +got:\n%s", tc.reason, diff)
 			}
 		})
 	}
@@ -194,11 +150,9 @@ func TestRenderComposedResourceMetadata(t *testing.T) {
 	errRef := meta.AddControllerReference(controlled, metav1.OwnerReference{UID: "not-very-random"})
 
 	type args struct {
-		ctx context.Context
-		xr  resource.Composite
-		cd  resource.Composed
-		t   v1.ComposedTemplate
-		env *env.Environment
+		xr resource.Composite
+		cd resource.Composed
+		rn ResourceName
 	}
 	type want struct {
 		cd  resource.Composed
@@ -230,11 +184,11 @@ func TestRenderComposedResourceMetadata(t *testing.T) {
 						}},
 					},
 				},
-				t: v1.ComposedTemplate{},
 			},
 			want: want{
 				cd: &fake.Composed{
 					ObjectMeta: metav1.ObjectMeta{
+						GenerateName: "prefix-",
 						OwnerReferences: []metav1.OwnerReference{{
 							Controller: pointer.Bool(true),
 							UID:        "very-random",
@@ -270,11 +224,11 @@ func TestRenderComposedResourceMetadata(t *testing.T) {
 						}},
 					},
 				},
-				t: v1.ComposedTemplate{},
 			},
 			want: want{
 				cd: &fake.Composed{
 					ObjectMeta: metav1.ObjectMeta{
+						GenerateName: "prefix-",
 						OwnerReferences: []metav1.OwnerReference{{
 							Controller:         pointer.Bool(true),
 							BlockOwnerDeletion: pointer.Bool(true),
@@ -294,7 +248,8 @@ func TestRenderComposedResourceMetadata(t *testing.T) {
 			args: args{
 				xr: &fake.Composite{
 					ObjectMeta: metav1.ObjectMeta{
-						UID: "somewhat-random",
+						Name: "cool-xr",
+						UID:  "somewhat-random",
 						Labels: map[string]string{
 							xcrd.LabelKeyNamePrefixForComposed: "prefix",
 							xcrd.LabelKeyClaimName:             "name",
@@ -303,15 +258,16 @@ func TestRenderComposedResourceMetadata(t *testing.T) {
 					},
 				},
 				cd: &fake.Composed{},
-				t:  v1.ComposedTemplate{},
 			},
 			want: want{
 				cd: &fake.Composed{
 					ObjectMeta: metav1.ObjectMeta{
+						GenerateName: "prefix-",
 						OwnerReferences: []metav1.OwnerReference{{
 							Controller:         pointer.Bool(true),
 							BlockOwnerDeletion: pointer.Bool(true),
 							UID:                "somewhat-random",
+							Name:               "cool-xr",
 						}},
 						Labels: map[string]string{
 							xcrd.LabelKeyNamePrefixForComposed: "prefix",
@@ -325,7 +281,7 @@ func TestRenderComposedResourceMetadata(t *testing.T) {
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
-			err := RenderComposedResourceMetadata(tc.args.ctx, tc.args.xr, tc.args.cd, tc.args.t, tc.args.env)
+			err := RenderComposedResourceMetadata(tc.args.cd, tc.args.xr, tc.args.rn)
 			if diff := cmp.Diff(tc.want.err, err, test.EquateErrors()); diff != "" {
 				t.Errorf("\n%s\nRenderComposedResourceMetadata(...): -want error, +got error:\n%s", tc.reason, diff)
 			}
@@ -336,14 +292,12 @@ func TestRenderComposedResourceMetadata(t *testing.T) {
 	}
 }
 
-func TestAPIDryRunRender(t *testing.T) {
+func TestDryRunRender(t *testing.T) {
 	errBoom := errors.New("boom")
 
 	type args struct {
 		ctx context.Context
-		cp  resource.Composite
 		cd  resource.Composed
-		t   v1.ComposedTemplate
 	}
 	type want struct {
 		cd  resource.Composed
@@ -360,11 +314,9 @@ func TestAPIDryRunRender(t *testing.T) {
 			// We must be returning early, or else we'd hit this error.
 			client: &test.MockClient{MockCreate: test.NewMockCreateFn(errBoom)},
 			args: args{
-				cp: &fake.Composite{},
 				cd: &fake.Composed{ObjectMeta: metav1.ObjectMeta{
 					Name: "already-has-a-cool-name",
 				}},
-				t: v1.ComposedTemplate{},
 			},
 			want: want{
 				cd: &fake.Composed{ObjectMeta: metav1.ObjectMeta{
@@ -378,9 +330,7 @@ func TestAPIDryRunRender(t *testing.T) {
 			// We must be returning early, or else we'd hit this error.
 			client: &test.MockClient{MockCreate: test.NewMockCreateFn(errBoom)},
 			args: args{
-				cp: &fake.Composite{},
 				cd: &fake.Composed{}, // Conspicously missing a generate name.
-				t:  v1.ComposedTemplate{},
 			},
 			want: want{
 				cd:  &fake.Composed{},
@@ -391,11 +341,9 @@ func TestAPIDryRunRender(t *testing.T) {
 			reason: "Errors dry-run creating the rendered composed resource to name it should be returned",
 			client: &test.MockClient{MockCreate: test.NewMockCreateFn(errBoom)},
 			args: args{
-				cp: &fake.Composite{},
 				cd: &fake.Composed{ObjectMeta: metav1.ObjectMeta{
 					GenerateName: "cool-resource-",
 				}},
-				t: v1.ComposedTemplate{},
 			},
 			want: want{
 				cd: &fake.Composed{ObjectMeta: metav1.ObjectMeta{
@@ -411,7 +359,6 @@ func TestAPIDryRunRender(t *testing.T) {
 				return nil
 			})},
 			args: args{
-				cp: &fake.Composite{},
 				cd: &fake.Composed{ObjectMeta: metav1.ObjectMeta{
 					GenerateName: "cool-resource-",
 				}},
@@ -427,12 +374,12 @@ func TestAPIDryRunRender(t *testing.T) {
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
 			r := NewAPIDryRunRenderer(tc.client)
-			err := r.Render(tc.args.ctx, tc.args.cp, tc.args.cd, tc.args.t, nil)
+			err := r.DryRunRender(tc.args.ctx, tc.args.cd)
 			if diff := cmp.Diff(tc.want.err, err, test.EquateErrors()); diff != "" {
-				t.Errorf("\n%s\nRender(...): -want, +got:\n%s", tc.reason, diff)
+				t.Errorf("\n%s\nDryRunRender(...): -want, +got:\n%s", tc.reason, diff)
 			}
 			if diff := cmp.Diff(tc.want.cd, tc.args.cd); diff != "" {
-				t.Errorf("\n%s\nRender(...): -want, +got:\n%s", tc.reason, diff)
+				t.Errorf("\n%s\nDryRunRender(...): -want, +got:\n%s", tc.reason, diff)
 			}
 		})
 	}

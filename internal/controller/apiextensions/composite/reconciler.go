@@ -68,8 +68,6 @@ const (
 	errSelectEnvironment      = "cannot select environment"
 	errCompose                = "cannot compose resources"
 	errRenderCD               = "cannot render composed resource"
-
-	errFmtPatchEnvironment = "cannot apply environment patch at index %d"
 )
 
 // Event reasons.
@@ -173,33 +171,6 @@ type ConfiguratorFn func(ctx context.Context, cr resource.Composite, rev *v1.Com
 // Configure the supplied composite resource using its composition.
 func (fn ConfiguratorFn) Configure(ctx context.Context, cr resource.Composite, rev *v1.CompositionRevision) error {
 	return fn(ctx, cr, rev)
-}
-
-// A Renderer is used to render a composed or composite resource.
-type Renderer interface {
-	Render(ctx context.Context, cp resource.Composite, cd resource.Composed, t v1.ComposedTemplate, env *env.Environment) error
-}
-
-// A RenderPipeline is a pipeline of renderers that can be run in sequence to
-// render a composed or composite resource.
-type RenderPipeline []Renderer
-
-// Render a composed resource by invoking a pipeline of renderers.
-func (r RenderPipeline) Render(ctx context.Context, cp resource.Composite, cd resource.Composed, t v1.ComposedTemplate, env *env.Environment) error {
-	for _, fn := range r {
-		if err := fn.Render(ctx, cp, cd, t, env); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// A RenderFn may be used to render a composed or composite resource.
-type RenderFn func(ctx context.Context, cp resource.Composite, cd resource.Composed, t v1.ComposedTemplate, env *env.Environment) error
-
-// Render a composed or composite resource.
-func (fn RenderFn) Render(ctx context.Context, cp resource.Composite, cd resource.Composed, t v1.ComposedTemplate, env *env.Environment) error {
-	return fn(ctx, cp, cd, t, env)
 }
 
 // A CompositionRequest is a request to compose resources.
@@ -626,7 +597,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 	for i, cd := range res.Composed {
 		// Specifying a name for P&T templates is optional but encouraged.
 		// If there was no name, fall back to using the index.
-		id := cd.ResourceName
+		id := string(cd.ResourceName)
 		if id == "" {
 			id = strconv.Itoa(i)
 		}
