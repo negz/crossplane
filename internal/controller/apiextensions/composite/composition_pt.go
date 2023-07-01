@@ -46,10 +46,10 @@ const (
 	errFetchDetails     = "cannot fetch connection details"
 	errExtractDetails   = "cannot extract composite resource connection details from composed resource"
 	errReadiness        = "cannot check whether composed resource is ready"
-	errUnmarshal        = "cannot unmarshal base template"
+	errUnmarshal        = "cannot unmarshal resource"
 	errGetSecret        = "cannot get connection secret of composed resource"
 	errNamePrefix       = "name prefix is not found in labels"
-	errKindChanged      = "cannot change the kind of an existing composed resource"
+	errKindChanged      = "cannot change the kind of an existing resource"
 	errName             = "cannot use dry-run create to name composed resource"
 	errInline           = "cannot inline Composition patch sets"
 	errRenderCR         = "cannot render composite resource"
@@ -72,19 +72,12 @@ func WithTemplateAssociator(a CompositionTemplateAssociator) PTComposerOption {
 	}
 }
 
-// WithCompositeRenderer configures how a PatchAndTransformComposer renders the
-// composite resource.
-func WithCompositeRenderer(r Renderer) PTComposerOption {
+// WithComposedDryRunRenderer configures how the PTComposer should dry-run
+// render composed resources - i.e. by submitting them to the API server to
+// generate a name for them.
+func WithComposedDryRunRenderer(r DryRunRenderer) PTComposerOption {
 	return func(c *PTComposer) {
-		c.composite = r
-	}
-}
-
-// WithComposedRenderer configures how a PatchAndTransformComposer renders
-// composed resources.
-func WithComposedRenderer(r Renderer) PTComposerOption {
-	return func(c *PTComposer) {
-		c.composed.Renderer = r
+		c.composed.DryRunRenderer = r
 	}
 }
 
@@ -114,7 +107,7 @@ func WithComposedConnectionDetailsExtractor(e ConnectionDetailsExtractor) PTComp
 }
 
 type composedResource struct {
-	Renderer
+	DryRunRenderer
 	managed.ConnectionDetailsFetcher
 	ConnectionDetailsExtractor
 	ReadinessChecker
@@ -127,7 +120,6 @@ type composedResource struct {
 type PTComposer struct {
 	client resource.ClientApplicator
 
-	composite   Renderer
 	composition CompositionTemplateAssociator
 	composed    composedResource
 }
@@ -139,14 +131,6 @@ func NewPTComposer(kube client.Client, o ...PTComposerOption) *PTComposer {
 	// already wrapped? Or just do away with unstructured.NewClient completely?
 	kube = unstructured.NewClient(kube)
 
-	rp := RenderPipeline{
-		RenderFn(RenderComposedResourceBase),
-		RenderFn(RenderFromCompositePatches),
-		RenderFn(RenderFromEnvironmentPatches),
-		RenderFn(RenderComposedResourceMetadata),
-		NewAPIDryRunRenderer(kube),
-	}
-
 	c := &PTComposer{
 		client: resource.ClientApplicator{Client: kube, Applicator: resource.NewAPIPatchingApplicator(kube)},
 
@@ -155,10 +139,9 @@ func NewPTComposer(kube client.Client, o ...PTComposerOption) *PTComposer {
 		// means we will be able to delete the GarbageCollectingAssociator and
 		// just use AssociateByOrder. Compositions with named templates will be
 		// handled by the PTFComposer.
-		composite:   RenderFn(RenderToCompositePatches),
 		composition: NewGarbageCollectingAssociator(kube),
 		composed: composedResource{
-			Renderer:                   rp,
+			DryRunRenderer:             NewAPIDryRunRenderer(kube),
 			ReadinessChecker:           ReadinessCheckerFn(IsReady),
 			ConnectionDetailsFetcher:   NewSecretConnectionDetailsFetcher(kube),
 			ConnectionDetailsExtractor: ConnectionDetailsExtractorFn(ExtractConnectionDetails),
@@ -212,14 +195,39 @@ func (c *PTComposer) Compose(ctx context.Context, xr resource.Composite, req Com
 		name := pointer.StringDeref(ta.Template.Name, strconv.Itoa(i))
 		r := composed.New(composed.FromReference(ta.Reference))
 
-		rerr := c.composed.Render(ctx, xr, r, ta.Template, req.Environment)
-		if rerr != nil {
-			events = append(events, event.Warning(reasonCompose, errors.Wrapf(rerr, errFmtResourceName, name)))
+		if err := RenderJSON(r, ta.Template.Base.Raw); err != nil {
+			// TODO: I think this should always be fatal.
+			return CompositionResult{}, err
+		}
+
+		err := RenderFromCompositePatches(r, xr, ta.Template.Patches)
+		if err != nil {
+			// TODO: Probably non-blocking? Does this get less gross if we use
+			// the same array-of-desired-resources pattern as the PTFComposer?
+			return CompositionResult{}, err
+		}
+
+		err = RenderFromEnvironmentPatches(r, req.Environment, ta.Template.Patches)
+		if err != nil {
+			// TODO: Probably non-blocking?
+			return CompositionResult{}, err
+		}
+
+		err = RenderComposedResourceMetadata(r, xr, ResourceName(pointer.StringDeref(ta.Template.Name, "")))
+		if err != nil {
+			// TODO: Should this be blocking?
+			return CompositionResult{}, err
+		}
+
+		err = c.composed.DryRunRender(ctx, r)
+		if err != nil {
+			// TODO: Should this be blocking?
+			return CompositionResult{}, err
 		}
 
 		cds[i] = ComposedResourceState{
-			ComposedResource:  ComposedResource{ResourceName: name},
-			TemplateRenderErr: rerr,
+			ComposedResource:  ComposedResource{ResourceName: ResourceName(name)},
+			TemplateRenderErr: err,
 			Template:          &ta.Template,
 			Resource:          r,
 		}
@@ -259,7 +267,7 @@ func (c *PTComposer) Compose(ctx context.Context, xr resource.Composite, req Com
 			continue
 		}
 
-		if err := c.composite.Render(ctx, xr, cds[i].Resource, *cds[i].Template, req.Environment); err != nil {
+		if err := RenderToCompositePatches(xr, cds[i].Resource, cds[i].Template.Patches); err != nil {
 			return CompositionResult{}, errors.Wrap(err, errRenderCR)
 		}
 
@@ -268,7 +276,7 @@ func (c *PTComposer) Compose(ctx context.Context, xr resource.Composite, req Com
 			return CompositionResult{}, errors.Wrap(err, errFetchDetails)
 		}
 
-		e, err := c.composed.ExtractConnection(cds[i].Resource, cds[i].ConnectionDetails, ExtractConfigsFromTemplate(cds[i].Template)...)
+		e, err := c.composed.ExtractConnection(cds[i].Resource, cds[i].ConnectionDetails, ExtractConfigsFromComposedTemplate(cds[i].Template)...)
 		if err != nil {
 			return CompositionResult{}, errors.Wrap(err, errExtractDetails)
 		}
@@ -397,7 +405,7 @@ func NewGarbageCollectingAssociator(c client.Client) *GarbageCollectingAssociato
 
 // AssociateTemplates with composed resources.
 func (a *GarbageCollectingAssociator) AssociateTemplates(ctx context.Context, cr resource.Composite, ct []v1.ComposedTemplate) ([]TemplateAssociation, error) { //nolint:gocyclo // Only slightly over (13).
-	templates := map[string]int{}
+	templates := map[ResourceName]int{}
 	for i, t := range ct {
 		if t.Name == nil {
 			// If our templates aren't named we fall back to assuming that the
@@ -405,7 +413,7 @@ func (a *GarbageCollectingAssociator) AssociateTemplates(ctx context.Context, cr
 			// order of our resource template array.
 			return AssociateByOrder(ct, cr.GetResourceReferences()), nil
 		}
-		templates[*t.Name] = i
+		templates[ResourceName(*t.Name)] = i
 	}
 
 	tas := make([]TemplateAssociation, len(ct))

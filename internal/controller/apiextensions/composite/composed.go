@@ -23,13 +23,16 @@ import (
 	v1 "github.com/crossplane/crossplane/apis/apiextensions/v1"
 )
 
+// A ResourceName uniquely identifies the composed resource within a Composition
+// or FunctionIO. This is not the metadata.name of the actual composed resource
+// instance; rather it is the name of an entry in a Composition's resources
+// array, and/or a FunctionIO's observed/desired resources array.
+type ResourceName string
+
 // A ComposedResource is an output of the composition process.
 type ComposedResource struct {
-	// ResourceName identifies the composed resource within a Composition or
-	// FunctionIO. This is not the metadata.name of the actual composed resource
-	// instance; rather it is the name of an entry in a Composition's resources
-	// array, and/or a FunctionIO's observed/desired resources array.
-	ResourceName string
+	// ResourceName of the composed resource.
+	ResourceName ResourceName
 
 	// Ready indicates whether this composed resource is ready - i.e. whether
 	// all of its readiness checks passed.
@@ -54,7 +57,7 @@ type ComposedResourceState struct {
 
 // ComposedResourceStates is a map of (Composition) resource name to state. The
 // key corresponds to the ResourceName field of the ComposedResource type.
-type ComposedResourceStates map[string]ComposedResourceState
+type ComposedResourceStates map[ResourceName]ComposedResourceState
 
 // Merge the supplied composed resource state into the map of states. See
 // MergeComposedResourceStates for details.

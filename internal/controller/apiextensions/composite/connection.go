@@ -271,9 +271,9 @@ type ConnectionDetailExtractConfig struct {
 	Value *string
 }
 
-// ExtractConfigsFromTemplate builds extract configs for the supplied P&T style
-// composed resource template.
-func ExtractConfigsFromTemplate(t *v1.ComposedTemplate) []ConnectionDetailExtractConfig {
+// ExtractConfigsFromComposedTemplate builds extract configs for the supplied
+// P&T style composed resource template.
+func ExtractConfigsFromComposedTemplate(t *v1.ComposedTemplate) []ConnectionDetailExtractConfig {
 	if t == nil {
 		return nil
 	}
@@ -298,9 +298,9 @@ func ExtractConfigsFromTemplate(t *v1.ComposedTemplate) []ConnectionDetailExtrac
 	return out
 }
 
-// ExtractConfigsFromDesired builds extract configs for the supplied Composition
-// Function desired state.
-func ExtractConfigsFromDesired(dr *iov1alpha1.DesiredResource) []ConnectionDetailExtractConfig {
+// ExtractConfigsFromDesiredResource builds extract configs for the supplied
+// Composition Function desired state.
+func ExtractConfigsFromDesiredResource(dr *iov1alpha1.DesiredResource) []ConnectionDetailExtractConfig {
 	if dr == nil {
 		return nil
 	}

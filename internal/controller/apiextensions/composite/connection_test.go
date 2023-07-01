@@ -454,7 +454,7 @@ func TestExtractConfigsFromTemplate(t *testing.T) {
 
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
-			cfgs := ExtractConfigsFromTemplate(tc.args.t)
+			cfgs := ExtractConfigsFromComposedTemplate(tc.args.t)
 
 			if diff := cmp.Diff(tc.want.cfgs, cfgs); diff != "" {
 				t.Errorf("\n%s\nExtractConfigsFromTemplate(...): -want, +got:\n%s", tc.reason, diff)
@@ -528,7 +528,7 @@ func TestExtractConfigsFromDesired(t *testing.T) {
 
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
-			cfgs := ExtractConfigsFromDesired(tc.args.d)
+			cfgs := ExtractConfigsFromDesiredResource(tc.args.d)
 
 			if diff := cmp.Diff(tc.want.cfgs, cfgs); diff != "" {
 				t.Errorf("\n%s\nExtractConfigsFromDesired(...): -want, +got:\n%s", tc.reason, diff)

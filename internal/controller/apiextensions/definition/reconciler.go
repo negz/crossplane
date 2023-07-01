@@ -501,13 +501,14 @@ func CompositeReconcilerOptions(co apiextensionscontroller.Options, d *v1.Compos
 	if co.Features.Enabled(features.EnableAlphaCompositionFunctions) {
 		fb := composite.NewFallBackComposer(
 			composite.NewPTFComposer(c,
-				composite.WithComposedResourceGetter(composite.NewExistingComposedResourceGetter(c, fetcher)),
+				composite.WithComposedResourceObserver(composite.NewExistingComposedResourceObserver(c, fetcher)),
 				composite.WithCompositeConnectionDetailsFetcher(fetcher),
-				composite.WithFunctionPipelineRunner(composite.NewFunctionPipeline(
-					composite.ContainerFunctionRunnerFn(composite.RunFunction),
-					composite.WithKubernetesAuthentication(c, co.Namespace, co.ServiceAccount, co.Registry),
-				)),
-			),
+				composite.WithContainerFunctionRunner(composite.RunWithOptions{
+					Runner: composite.ContainerFunctionRunnerFn(composite.RunFunction),
+					Options: []composite.ContainerFunctionRunnerOption{
+						composite.WithKubernetesAuthentication(c, co.Namespace, co.ServiceAccount, co.Registry),
+					},
+				})),
 			composite.NewPTComposer(c, composite.WithComposedConnectionDetailsFetcher(fetcher)),
 			composite.FallBackForAnonymousTemplates(c),
 		)

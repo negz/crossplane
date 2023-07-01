@@ -39,7 +39,6 @@ import (
 	"github.com/crossplane/crossplane-runtime/pkg/test"
 
 	v1 "github.com/crossplane/crossplane/apis/apiextensions/v1"
-	env "github.com/crossplane/crossplane/internal/controller/apiextensions/composite/environment"
 )
 
 func TestPTCompose(t *testing.T) {
@@ -59,6 +58,9 @@ func TestPTCompose(t *testing.T) {
 		res CompositionResult
 		err error
 	}
+
+	// TODO(negz): Update tests to handle the fact that we no longer inject one
+	// big renderer, but instead are hard-wired to call several smaller ones.
 
 	cases := map[string]struct {
 		reason string
@@ -126,12 +128,6 @@ func TestPTCompose(t *testing.T) {
 						}}
 						return tas, nil
 					})),
-					WithComposedRenderer(RenderFn(func(ctx context.Context, cp resource.Composite, cd resource.Composed, t v1.ComposedTemplate, env *env.Environment) error {
-						return errBoom
-					})),
-					WithCompositeRenderer(RenderFn(func(ctx context.Context, cp resource.Composite, cd resource.Composed, t v1.ComposedTemplate, env *env.Environment) error {
-						return nil
-					})),
 					WithComposedConnectionDetailsExtractor(ConnectionDetailsExtractorFn(func(cd resource.Composed, conn managed.ConnectionDetails, cfg ...ConnectionDetailExtractConfig) (managed.ConnectionDetails, error) {
 						return nil, nil
 					})),
@@ -170,9 +166,6 @@ func TestPTCompose(t *testing.T) {
 						}}
 						return tas, nil
 					})),
-					WithComposedRenderer(RenderFn(func(ctx context.Context, cp resource.Composite, cd resource.Composed, t v1.ComposedTemplate, env *env.Environment) error {
-						return nil
-					})),
 				},
 			},
 			args: args{
@@ -202,9 +195,6 @@ func TestPTCompose(t *testing.T) {
 							},
 						}}
 						return tas, nil
-					})),
-					WithComposedRenderer(RenderFn(func(ctx context.Context, cp resource.Composite, cd resource.Composed, t v1.ComposedTemplate, env *env.Environment) error {
-						return nil
 					})),
 				},
 			},
@@ -237,12 +227,6 @@ func TestPTCompose(t *testing.T) {
 						}}
 						return tas, nil
 					})),
-					WithComposedRenderer(RenderFn(func(ctx context.Context, cp resource.Composite, cd resource.Composed, t v1.ComposedTemplate, env *env.Environment) error {
-						return nil
-					})),
-					WithCompositeRenderer(RenderFn(func(ctx context.Context, cp resource.Composite, cd resource.Composed, t v1.ComposedTemplate, env *env.Environment) error {
-						return errBoom
-					})),
 				},
 			},
 			args: args{
@@ -273,12 +257,6 @@ func TestPTCompose(t *testing.T) {
 							},
 						}}
 						return tas, nil
-					})),
-					WithComposedRenderer(RenderFn(func(ctx context.Context, cp resource.Composite, cd resource.Composed, t v1.ComposedTemplate, env *env.Environment) error {
-						return nil
-					})),
-					WithCompositeRenderer(RenderFn(func(ctx context.Context, cp resource.Composite, cd resource.Composed, t v1.ComposedTemplate, env *env.Environment) error {
-						return nil
 					})),
 					WithComposedConnectionDetailsFetcher(ConnectionDetailsFetcherFn(func(ctx context.Context, o resource.ConnectionSecretOwner) (managed.ConnectionDetails, error) {
 						return nil, errBoom
@@ -313,12 +291,6 @@ func TestPTCompose(t *testing.T) {
 							},
 						}}
 						return tas, nil
-					})),
-					WithComposedRenderer(RenderFn(func(ctx context.Context, cp resource.Composite, cd resource.Composed, t v1.ComposedTemplate, env *env.Environment) error {
-						return nil
-					})),
-					WithCompositeRenderer(RenderFn(func(ctx context.Context, cp resource.Composite, cd resource.Composed, t v1.ComposedTemplate, env *env.Environment) error {
-						return nil
 					})),
 					WithComposedConnectionDetailsFetcher(ConnectionDetailsFetcherFn(func(ctx context.Context, o resource.ConnectionSecretOwner) (managed.ConnectionDetails, error) {
 						return nil, nil
@@ -357,12 +329,6 @@ func TestPTCompose(t *testing.T) {
 						}}
 						return tas, nil
 					})),
-					WithComposedRenderer(RenderFn(func(ctx context.Context, cp resource.Composite, cd resource.Composed, t v1.ComposedTemplate, env *env.Environment) error {
-						return nil
-					})),
-					WithCompositeRenderer(RenderFn(func(ctx context.Context, cp resource.Composite, cd resource.Composed, t v1.ComposedTemplate, env *env.Environment) error {
-						return nil
-					})),
 					WithComposedConnectionDetailsFetcher(ConnectionDetailsFetcherFn(func(ctx context.Context, o resource.ConnectionSecretOwner) (managed.ConnectionDetails, error) {
 						return nil, nil
 					})),
@@ -400,9 +366,6 @@ func TestPTCompose(t *testing.T) {
 					WithTemplateAssociator(CompositionTemplateAssociatorFn(func(ctx context.Context, c resource.Composite, ct []v1.ComposedTemplate) ([]TemplateAssociation, error) {
 						return nil, nil
 					})),
-					WithCompositeRenderer(RenderFn(func(ctx context.Context, cp resource.Composite, cd resource.Composed, t v1.ComposedTemplate, env *env.Environment) error {
-						return nil
-					})),
 				},
 			},
 			args: args{
@@ -433,12 +396,6 @@ func TestPTCompose(t *testing.T) {
 							},
 						}}
 						return tas, nil
-					})),
-					WithComposedRenderer(RenderFn(func(ctx context.Context, cp resource.Composite, cd resource.Composed, t v1.ComposedTemplate, env *env.Environment) error {
-						return nil
-					})),
-					WithCompositeRenderer(RenderFn(func(ctx context.Context, cp resource.Composite, cd resource.Composed, t v1.ComposedTemplate, env *env.Environment) error {
-						return nil
 					})),
 					WithComposedConnectionDetailsFetcher(ConnectionDetailsFetcherFn(func(ctx context.Context, o resource.ConnectionSecretOwner) (managed.ConnectionDetails, error) {
 						return nil, nil
@@ -626,7 +583,7 @@ func TestGarbageCollectingAssociator(t *testing.T) {
 			reason: "We should associate referenced resources by their template name annotation.",
 			c: &test.MockClient{
 				MockGet: test.NewMockGetFn(nil, func(obj client.Object) error {
-					SetCompositionResourceName(obj.(metav1.Object), n0)
+					SetCompositionResourceName(obj.(metav1.Object), ResourceName(n0))
 					return nil
 				}),
 			},
