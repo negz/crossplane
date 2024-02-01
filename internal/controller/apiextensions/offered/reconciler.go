@@ -46,7 +46,7 @@ import (
 
 	v1 "github.com/crossplane/crossplane/apis/apiextensions/v1"
 	secretsv1alpha1 "github.com/crossplane/crossplane/apis/secrets/v1alpha1"
-	claim "github.com/crossplane/crossplane/internal/controller/apiextensions/claim/ssa"
+	claim "github.com/crossplane/crossplane/internal/controller/apiextensions/claim/csa"
 	apiextensionscontroller "github.com/crossplane/crossplane/internal/controller/apiextensions/controller"
 	"github.com/crossplane/crossplane/internal/features"
 	"github.com/crossplane/crossplane/internal/xcrd"
