@@ -199,7 +199,6 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 	var applied []string //nolint:prealloc // We don't know how many roles we'll apply.
 	for _, rl := range r.rbac.RenderRoles(ns, l.Items) {
 		log := log.WithValues("role-name", rl.GetName())
-		rl := rl // Pin range variable so we can take its address.
 
 		err := r.client.Apply(ctx, &rl, resource.MustBeControllableBy(ns.GetUID()), resource.AllowUpdateIf(RolesDiffer))
 		if resource.IsNotAllowed(err) {
