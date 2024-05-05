@@ -21,6 +21,7 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"time"
@@ -30,6 +31,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/rest"
+	kcache "k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/leaderelection/resourcelock"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -47,6 +49,7 @@ import (
 
 	"github.com/crossplane/crossplane/internal/controller/apiextensions"
 	apiextensionscontroller "github.com/crossplane/crossplane/internal/controller/apiextensions/controller"
+	"github.com/crossplane/crossplane/internal/controller/engine"
 	"github.com/crossplane/crossplane/internal/controller/pkg"
 	pkgcontroller "github.com/crossplane/crossplane/internal/controller/pkg/controller"
 	"github.com/crossplane/crossplane/internal/features"
@@ -134,6 +137,8 @@ func (c *startCommand) Run(s *runtime.Scheme, log logging.Logger) error { //noli
 		Deduplicate: true,
 	})
 
+	// The claim and XR controllers don't use the manager's cache or client.
+	// They use their own. They're setup later in this method.
 	eb := record.NewBroadcaster()
 	mgr, err := ctrl.NewManager(ratelimiter.LimitRESTConfig(cfg, c.MaxReconcileRate), ctrl.Options{
 		Scheme: s,
@@ -270,9 +275,69 @@ func (c *startCommand) Run(s *runtime.Scheme, log logging.Logger) error { //noli
 		log.Info("Alpha feature enabled", "flag", features.EnableAlphaClaimSSA)
 	}
 
+	// Claim and XR controllers are started and stopped dynamically by the
+	// ControllerEngine below. When realtime compositions are enabled, they also
+	// start and stop their watches (e.g. of composed resources) dynamically. To
+	// do this, the ControllerEngine must have exclusive ownership of a cache.
+	// This allows it to track what controllers are using the cache's informers.
+	ca, err := cache.New(mgr.GetConfig(), cache.Options{
+		HTTPClient: mgr.GetHTTPClient(),
+		Scheme:     mgr.GetScheme(),
+		Mapper:     mgr.GetRESTMapper(),
+		SyncPeriod: &c.SyncInterval,
+
+		// TODO(negz): We need to stop watches when CRDs are deleted. This
+		// attempts to make the (frequently logged) error a little less scary.
+		DefaultWatchErrorHandler: func(_ *kcache.Reflector, err error) {
+			if errors.Is(io.EOF, err) {
+				// Watch closed normally.
+				return
+			}
+			log.Debug("Watch error - probably due to watched CRD being uninstalled", "error", err)
+		},
+	})
+	if err != nil {
+		return errors.Wrap(err, "cannot create cache for API extension controllers")
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() {
+		// Don't start the cache until the manager is elected.
+		<-mgr.Elected()
+
+		if err := ca.Start(ctx); err != nil {
+			log.Info("API extensions cache returned an error", "error", err)
+		}
+
+		log.Info("API extensions cache stopped")
+	}()
+
+	cl, err := client.New(mgr.GetConfig(), client.Options{
+		HTTPClient: mgr.GetHTTPClient(),
+		Scheme:     mgr.GetScheme(),
+		Mapper:     mgr.GetRESTMapper(),
+		Cache: &client.CacheOptions{
+			// Don't cache secrets - there may be a lot of them.
+			DisableFor: []client.Object{&corev1.Secret{}},
+			Reader:     ca,
+
+			// TODO(negz): Currently we'll never stop the informers that this
+			// starts unless realtime compositions are enabled. That means
+			Unstructured: true,
+		},
+	})
+	if err != nil {
+		return errors.Wrap(err, "cannot create client for API extension controllers")
+	}
+
+	ce := engine.New(mgr, engine.TrackInformers(ca, mgr.GetScheme()), engine.WithLogger(log))
 	ao := apiextensionscontroller.Options{
-		Options:        o,
-		FunctionRunner: functionRunner,
+		Options:                o,
+		ControllerClient:       cl,
+		ControllerFieldIndexer: ca,
+		ControllerEngine:       ce,
+		FunctionRunner:         functionRunner,
 	}
 
 	if err := apiextensions.Setup(mgr, ao); err != nil {

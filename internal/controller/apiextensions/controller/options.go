@@ -18,14 +18,26 @@ limitations under the License.
 package controller
 
 import (
+	"sigs.k8s.io/controller-runtime/pkg/client"
+
 	"github.com/crossplane/crossplane-runtime/pkg/controller"
 
+	"github.com/crossplane/crossplane/internal/controller/engine"
 	"github.com/crossplane/crossplane/internal/xfn"
 )
 
 // Options specific to apiextensions controllers.
 type Options struct {
 	controller.Options
+
+	// ControllerClient used by all dynamic controllers.
+	ControllerClient client.Client
+
+	// ControllerFieldIndexer used to add indexes to the ControllerClient.
+	ControllerFieldIndexer client.FieldIndexer
+
+	// ControllerEngine used to dynamically start and stop controllers.
+	ControllerEngine *engine.ControllerEngine
 
 	// FunctionRunner used to run Composition Functions.
 	FunctionRunner *xfn.PackagedFunctionRunner
