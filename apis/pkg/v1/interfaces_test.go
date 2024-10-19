@@ -23,6 +23,12 @@ var (
 )
 
 var (
+	_ PackageList = &ProviderList{}
+	_ PackageList = &ConfigurationList{}
+	_ PackageList = &FunctionList{}
+)
+
+var (
 	_ PackageRevision = &ProviderRevision{}
 	_ PackageRevision = &ConfigurationRevision{}
 	_ PackageRevision = &FunctionRevision{}

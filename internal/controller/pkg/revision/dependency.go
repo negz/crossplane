@@ -136,6 +136,7 @@ func (m *PackageDependencyManager) Resolve(ctx context.Context, pkg runtime.Obje
 		Source:       lockRef,
 		Version:      prRef.Identifier(),
 		Dependencies: sources,
+		Replaces:     pack.GetReplaces(),
 	}
 
 	// Delete packages in lock with same name and distinct source

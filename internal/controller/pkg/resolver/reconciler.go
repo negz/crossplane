@@ -249,6 +249,9 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 		return reconcile.Result{Requeue: false}, nil
 	}
 
+	// TODO(negz): Pick an implied dependency at random. Otherwise the first
+	// implied dependency can block processing of others indefinitely.
+
 	// If we are missing a node, we want to create it. The resolver never
 	// modifies the Lock. We only create the first implied node as we will
 	// be requeued when it adds itself to the Lock, at which point we will

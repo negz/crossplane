@@ -28,7 +28,6 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -125,6 +124,7 @@ const (
 	reasonSync         event.Reason = "SyncPackage"
 	reasonDeactivate   event.Reason = "DeactivateRevision"
 	reasonPaused       event.Reason = "ReconciliationPaused"
+	reasonReplaced     event.Reason = "ReplacedPackage"
 )
 
 // ReconcilerOption is used to configure the Reconciler.
@@ -177,6 +177,22 @@ func WithFinalizer(f resource.Finalizer) ReconcilerOption {
 func WithDependencyManager(m DependencyManager) ReconcilerOption {
 	return func(r *Reconciler) {
 		r.lock = m
+	}
+}
+
+// WithSourceResolver specifies how the Reconciler should map a package source
+// to an installed package.
+func WithSourceResolver(sr SourceResolver) ReconcilerOption {
+	return func(r *Reconciler) {
+		r.source = sr
+	}
+}
+
+// WithPackageDeactivator specifies how the Reconciler should deactivate
+// replaced packages.
+func WithPackageDeactivator(pd PackageDeactivator) ReconcilerOption {
+	return func(r *Reconciler) {
+		r.pkg = pd
 	}
 }
 
@@ -268,6 +284,8 @@ type Reconciler struct {
 	cache          xpkg.PackageCache
 	revision       resource.Finalizer
 	lock           DependencyManager
+	source         SourceResolver
+	pkg            PackageDeactivator
 	runtimeHook    RuntimeHooks
 	objects        Establisher
 	parser         parser.Parser
@@ -323,6 +341,8 @@ func SetupProviderRevision(mgr ctrl.Manager, o controller.Options) error {
 	ro := []ReconcilerOption{
 		WithCache(o.Cache),
 		WithDependencyManager(NewPackageDependencyManager(mgr.GetClient(), dag.NewMapDag, v1beta1.ProviderPackageType)),
+		WithSourceResolver(NewListResolver(mgr.GetClient(), &v1.ProviderList{})),
+		WithPackageDeactivator(NewPackageAndRevisionDeactivator(mgr.GetClient(), &v1.ProviderRevisionList{})),
 		WithEstablisher(NewAPIEstablisher(mgr.GetClient(), o.Namespace, o.MaxConcurrentPackageEstablishers)),
 		WithNewPackageRevisionFn(nr),
 		WithParser(parser.New(metaScheme, objScheme)),
@@ -377,6 +397,8 @@ func SetupConfigurationRevision(mgr ctrl.Manager, o controller.Options) error {
 	r := NewReconciler(mgr,
 		WithCache(o.Cache),
 		WithDependencyManager(NewPackageDependencyManager(mgr.GetClient(), dag.NewMapDag, v1beta1.ConfigurationPackageType)),
+		WithSourceResolver(NewListResolver(mgr.GetClient(), &v1.ConfigurationList{})),
+		WithPackageDeactivator(NewPackageAndRevisionDeactivator(mgr.GetClient(), &v1.ConfigurationRevisionList{})),
 		WithNewPackageRevisionFn(nr),
 		WithEstablisher(NewAPIEstablisher(mgr.GetClient(), o.Namespace, o.MaxConcurrentPackageEstablishers)),
 		WithParser(parser.New(metaScheme, objScheme)),
@@ -437,6 +459,8 @@ func SetupFunctionRevision(mgr ctrl.Manager, o controller.Options) error {
 	ro := []ReconcilerOption{
 		WithCache(o.Cache),
 		WithDependencyManager(NewPackageDependencyManager(mgr.GetClient(), dag.NewMapDag, v1beta1.FunctionPackageType)),
+		WithSourceResolver(NewListResolver(mgr.GetClient(), &v1.FunctionList{})),
+		WithPackageDeactivator(NewPackageAndRevisionDeactivator(mgr.GetClient(), &v1.FunctionRevisionList{})),
 		WithEstablisher(NewAPIEstablisher(mgr.GetClient(), o.Namespace, o.MaxConcurrentPackageEstablishers)),
 		WithNewPackageRevisionFn(nr),
 		WithParser(parser.New(metaScheme, objScheme)),
@@ -471,6 +495,8 @@ func NewReconciler(mgr manager.Manager, opts ...ReconcilerOption) *Reconciler {
 		cache:     xpkg.NewNopCache(),
 		revision:  resource.NewAPIFinalizer(mgr.GetClient(), finalizer),
 		objects:   NewNopEstablisher(),
+		source:    NewNopSourceResolver(),
+		pkg:       NewNopPackageDeactivator(),
 		parser:    parser.New(nil, nil),
 		linter:    parser.NewPackageLinter(nil, nil, nil),
 		versioner: version.New(),
@@ -789,9 +815,9 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 
 	pkgMeta, _ := xpkg.TryConvert(pkg.GetMeta()[0], &pkgmetav1.Provider{}, &pkgmetav1.Configuration{}, &pkgmetav1.Function{})
 
-	pmo := pkgMeta.(metav1.Object) //nolint:forcetypeassert // Will always be metav1.Object.
-	meta.AddLabels(pr, pmo.GetLabels())
-	meta.AddAnnotations(pr, pmo.GetAnnotations())
+	pm := pkgMeta.(pkgmetav1.Pkg) //nolint:forcetypeassert // Will always be pkgmetav1.Pkg.
+	meta.AddLabels(pr, pm.GetLabels())
+	meta.AddAnnotations(pr, pm.GetAnnotations())
 	if err := r.client.Update(ctx, pr); err != nil {
 		if kerrors.IsConflict(err) {
 			return reconcile.Result{Requeue: true}, nil
@@ -839,6 +865,39 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 			r.record.Event(pr, event.Warning(reasonDependencies, err))
 
 			return reconcile.Result{}, err
+		}
+	}
+
+	for _, source := range pm.GetReplaces() {
+		pkg, err := r.source.Resolve(ctx, source)
+		if kerrors.IsNotFound(err) {
+			// The replaced package isn't installed.
+			continue
+		}
+		if err != nil {
+			err = errors.Wrapf(err, "cannot resolve replaced package with source %q", source)
+			pr.SetConditions(v1.Unhealthy().WithMessage(err.Error()))
+			_ = r.client.Status().Update(ctx, pr)
+
+			r.record.Event(pr, event.Warning(reasonSync, err))
+
+			return reconcile.Result{}, err
+		}
+
+		// TODO(negz): Add a pkg.crossplane.io/replaced-by annotation?
+		deactivated, err := r.pkg.Deactivate(ctx, pkg)
+		if err != nil {
+			err = errors.Wrapf(err, "cannot deactivate replaced %T %q with source %q", pkg, pkg.GetName(), source)
+			pr.SetConditions(v1.Unhealthy().WithMessage(err.Error()))
+			_ = r.client.Status().Update(ctx, pr)
+
+			r.record.Event(pr, event.Warning(reasonSync, err))
+
+			return reconcile.Result{}, err
+		}
+		if deactivated {
+			r.log.Info("Deactivated replaced package", "package-name", pkg.GetName(), "package-source", source, "replaced-by-revision", pr.GetName())
+			r.record.Event(pr, event.Normal(reasonReplaced, fmt.Sprintf("Deactivated package %q (%s), which this revision replaces.", pkg.GetName(), source)))
 		}
 	}
 

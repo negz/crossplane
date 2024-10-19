@@ -53,8 +53,17 @@ type LockPackage struct {
 
 	// Dependencies are the list of dependencies of this package. The order of
 	// the dependencies will dictate the order in which they are resolved.
+	//+optional
 	Dependencies []Dependency `json:"dependencies"`
+
+	// Replaces are the list of package sources this package replaces. The
+	// package manager considers a dependency to be satisfied if the dependency
+	// is either installed, or replaced by a package that's installed.
+	//+optional
+	Replaces []string `json:"replaces"`
 }
+
+// TODO(negz): Handle replaces in the DAG...
 
 // ToNodes converts LockPackages to DAG nodes.
 func ToNodes(pkgs ...LockPackage) []dag.Node {
