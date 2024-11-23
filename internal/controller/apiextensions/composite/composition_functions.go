@@ -66,6 +66,8 @@ const (
 	errExtraResourceAsStruct    = "cannot encode extra resource to protocol buffer Struct well-known type"
 	errUnknownResourceSelector  = "cannot get extra resource by name: unknown resource selector type"
 	errListExtraResources       = "cannot list extra resources"
+	errMarshalJSON              = "cannot marshal to JSON"
+	errGetComposed              = "cannot get composed resource"
 
 	errFmtApplyCD                    = "cannot apply composed resource %q"
 	errFmtFetchCDConnectionDetails   = "cannot fetch connection details for composed resource %q (a %s named %s)"
@@ -77,6 +79,8 @@ const (
 	errFmtUnmarshalDesiredCD         = "cannot unmarshal desired composed resource %q from RunFunctionResponse"
 	errFmtCDAsStruct                 = "cannot encode composed resource %q to protocol buffer Struct well-known type"
 	errFmtFatalResult                = "pipeline step %q returned a fatal result: %s"
+	errFmtGenerateName               = "cannot generate a name for composed resource %q"
+	errFmtRenderMetadata             = "cannot render metadata for composed resource %q"
 )
 
 // Server-side-apply field owners. We need two of these because it's possible
@@ -216,7 +220,10 @@ func WithManagedFieldsUpgrader(u ManagedFieldsUpgrader) FunctionComposerOption {
 // NewFunctionComposer returns a new Composer that supports composing resources using
 // both Patch and Transform (P&T) logic and a pipeline of Composition Functions.
 func NewFunctionComposer(kube client.Client, r FunctionRunner, o ...FunctionComposerOption) *FunctionComposer {
-	f := NewSecretConnectionDetailsFetcher(kube)
+	// We don't fetch connection details by default.
+	f := ConnectionDetailsFetcherFn(func(_ context.Context, _ resource.ConnectionSecretOwner) (managed.ConnectionDetails, error) {
+		return managed.ConnectionDetails{}, nil
+	})
 
 	c := &FunctionComposer{
 		client: kube,

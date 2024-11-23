@@ -29,6 +29,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
@@ -47,8 +48,6 @@ import (
 	v1 "github.com/crossplane/crossplane/apis/apiextensions/v1"
 	"github.com/crossplane/crossplane/internal/engine"
 )
-
-var _ Composer = ComposerSelectorFn(func(_ *v1.CompositionMode) Composer { return nil })
 
 func TestReconcile(t *testing.T) {
 	errBoom := errors.New("boom")
@@ -385,9 +384,7 @@ func TestReconcile(t *testing.T) {
 						return nil
 					})),
 					WithCompositionRevisionFetcher(CompositionRevisionFetcherFn(func(_ context.Context, _ resource.Composite) (*v1.CompositionRevision, error) {
-						c := &v1.CompositionRevision{Spec: v1.CompositionRevisionSpec{
-							Resources: []v1.ComposedTemplate{{}},
-						}}
+						c := &v1.CompositionRevision{Spec: v1.CompositionRevisionSpec{}}
 						return c, nil
 					})),
 					WithCompositionRevisionValidator(CompositionRevisionValidatorFn(func(_ *v1.CompositionRevision) error { return nil })),
@@ -432,9 +429,7 @@ func TestReconcile(t *testing.T) {
 						return nil
 					})),
 					WithCompositionRevisionFetcher(CompositionRevisionFetcherFn(func(_ context.Context, _ resource.Composite) (*v1.CompositionRevision, error) {
-						c := &v1.CompositionRevision{Spec: v1.CompositionRevisionSpec{
-							Resources: []v1.ComposedTemplate{{}},
-						}}
+						c := &v1.CompositionRevision{Spec: v1.CompositionRevisionSpec{}}
 						return c, nil
 					})),
 					WithCompositionRevisionValidator(CompositionRevisionValidatorFn(func(_ *v1.CompositionRevision) error { return nil })),
@@ -508,9 +503,7 @@ func TestReconcile(t *testing.T) {
 						return nil
 					})),
 					WithCompositionRevisionFetcher(CompositionRevisionFetcherFn(func(_ context.Context, _ resource.Composite) (*v1.CompositionRevision, error) {
-						c := &v1.CompositionRevision{Spec: v1.CompositionRevisionSpec{
-							Resources: []v1.ComposedTemplate{{}},
-						}}
+						c := &v1.CompositionRevision{Spec: v1.CompositionRevisionSpec{}}
 						return c, nil
 					})),
 					WithCompositionRevisionValidator(CompositionRevisionValidatorFn(func(_ *v1.CompositionRevision) error { return nil })),
@@ -601,9 +594,7 @@ func TestReconcile(t *testing.T) {
 						return nil
 					})),
 					WithCompositionRevisionFetcher(CompositionRevisionFetcherFn(func(_ context.Context, _ resource.Composite) (*v1.CompositionRevision, error) {
-						c := &v1.CompositionRevision{Spec: v1.CompositionRevisionSpec{
-							Resources: []v1.ComposedTemplate{{}},
-						}}
+						c := &v1.CompositionRevision{Spec: v1.CompositionRevisionSpec{}}
 						return c, nil
 					})),
 					WithCompositionRevisionValidator(CompositionRevisionValidatorFn(func(_ *v1.CompositionRevision) error { return nil })),
@@ -646,9 +637,7 @@ func TestReconcile(t *testing.T) {
 						return nil
 					})),
 					WithCompositionRevisionFetcher(CompositionRevisionFetcherFn(func(_ context.Context, _ resource.Composite) (*v1.CompositionRevision, error) {
-						c := &v1.CompositionRevision{Spec: v1.CompositionRevisionSpec{
-							Resources: []v1.ComposedTemplate{{}},
-						}}
+						c := &v1.CompositionRevision{Spec: v1.CompositionRevisionSpec{}}
 						return c, nil
 					})),
 					WithCompositionRevisionValidator(CompositionRevisionValidatorFn(func(_ *v1.CompositionRevision) error { return nil })),
@@ -1224,7 +1213,7 @@ func TestReconcile(t *testing.T) {
 					WithComposer(ComposerFn(func(_ context.Context, _ *composite.Unstructured, _ CompositionRequest) (CompositionResult, error) {
 						return CompositionResult{
 							Composite: CompositeResource{
-								Ready: &valBoolFalse,
+								Ready: ptr.To(false),
 							},
 							Composed:          []ComposedResource{},
 							ConnectionDetails: cd,
@@ -1388,64 +1377,6 @@ func WantComposite(t *testing.T, want resource.Composite) func(_ context.Context
 			t.Errorf("WantComposite(...): -want, +got: %s", diff)
 		}
 		return nil
-	}
-}
-
-func TestFilterToXRPatches(t *testing.T) {
-	toXR1 := v1.Patch{
-		Type: v1.PatchTypeToCompositeFieldPath,
-	}
-	toXR2 := v1.Patch{
-		Type: v1.PatchTypeCombineToComposite,
-	}
-	fromXR1 := v1.Patch{
-		Type: v1.PatchTypeFromCompositeFieldPath,
-	}
-	fromXR2 := v1.Patch{
-		Type: v1.PatchTypeCombineFromComposite,
-	}
-	type args struct {
-		tas []TemplateAssociation
-	}
-	tests := map[string]struct {
-		args args
-		want []v1.Patch
-	}{
-		"NonEmptyToXRPatches": {
-			args: args{
-				tas: []TemplateAssociation{
-					{
-						Template: v1.ComposedTemplate{
-							Patches: []v1.Patch{toXR1, toXR2, fromXR1, fromXR2},
-						},
-					},
-				},
-			},
-			want: []v1.Patch{toXR1, toXR2},
-		},
-		"NoToXRPatches": {
-			args: args{
-				tas: []TemplateAssociation{
-					{
-						Template: v1.ComposedTemplate{
-							Patches: []v1.Patch{fromXR1, fromXR2},
-						},
-					},
-				},
-			},
-			want: []v1.Patch{},
-		},
-		"EmptyToXRPatches": {
-			args: args{},
-			want: []v1.Patch{},
-		},
-	}
-	for name, tc := range tests {
-		t.Run(name, func(t *testing.T) {
-			if diff := cmp.Diff(tc.want, toXRPatchesFromTAs(tc.args.tas)); diff != "" {
-				t.Errorf("\nfilterToXRPatches(...): -want, +got:\n%s", diff)
-			}
-		})
 	}
 }
 

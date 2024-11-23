@@ -33,7 +33,6 @@ import (
 	"github.com/crossplane/crossplane-runtime/pkg/parser"
 
 	pkgmetav1 "github.com/crossplane/crossplane/apis/pkg/meta/v1"
-	"github.com/crossplane/crossplane/apis/pkg/meta/v1beta1"
 	"github.com/crossplane/crossplane/internal/xpkg/parser/examples"
 )
 
@@ -168,7 +167,7 @@ func (b *Builder) Build(ctx context.Context, opts ...BuildOpt) (v1.Image, runtim
 	switch meta.GetObjectKind().GroupVersionKind().Kind {
 	case pkgmetav1.ConfigurationKind:
 		linter = NewConfigurationLinter()
-	case v1beta1.FunctionKind:
+	case pkgmetav1.FunctionKind:
 		linter = NewFunctionLinter()
 	case pkgmetav1.ProviderKind:
 		linter = NewProviderLinter()

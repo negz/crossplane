@@ -24,26 +24,6 @@ limitations under the License.
 //go:generate rm -rf ../cluster/crds
 //go:generate rm -rf ../cluster/webhookconfigurations/manifests.yaml
 
-// Replicate identical API versions
-
-//go:generate ../hack/duplicate_api_type.sh apiextensions/v1/composition_revision_types.go apiextensions/v1beta1
-//go:generate ../hack/duplicate_api_type.sh apiextensions/v1/composition_common.go apiextensions/v1beta1
-//go:generate ../hack/duplicate_api_type.sh apiextensions/v1/composition_patches.go apiextensions/v1beta1
-//go:generate ../hack/duplicate_api_type.sh apiextensions/v1/composition_transforms.go apiextensions/v1beta1
-
-//go:generate ../hack/duplicate_api_type.sh apiextensions/v1beta1/environment_config_types.go apiextensions/v1alpha1
-
-//go:generate ../hack/duplicate_api_type.sh pkg/v1/package_types.go pkg/v1beta1
-//go:generate ../hack/duplicate_api_type.sh pkg/v1/package_runtime_types.go pkg/v1beta1
-//go:generate ../hack/duplicate_api_type.sh pkg/v1/revision_types.go pkg/v1beta1
-//go:generate ../hack/duplicate_api_type.sh pkg/v1/function_types.go pkg/v1beta1
-
-//go:generate ../hack/duplicate_api_type.sh pkg/meta/v1/configuration_types.go pkg/meta/v1alpha1
-//go:generate ../hack/duplicate_api_type.sh pkg/meta/v1/provider_types.go pkg/meta/v1alpha1
-//go:generate ../hack/duplicate_api_type.sh pkg/meta/v1/function_types.go pkg/meta/v1beta1
-//go:generate ../hack/duplicate_api_type.sh pkg/meta/v1/meta.go pkg/meta/v1alpha1
-//go:generate ../hack/duplicate_api_type.sh pkg/meta/v1/meta.go pkg/meta/v1beta1
-
 // NOTE(negz): We generate deepcopy methods and CRDs for each API group
 // separately because there seems to be an undiagnosed bug in controller-runtime
 // that causes some kubebuilder annotations to be ignored when we try to
@@ -63,8 +43,6 @@ limitations under the License.
 
 // Generate conversion code
 //go:generate go run -tags generate github.com/jmattheis/goverter/cmd/goverter gen -build-tags="" ./apiextensions/v1
-//go:generate go run -tags generate github.com/jmattheis/goverter/cmd/goverter gen -build-tags="" ./pkg/meta/v1alpha1
-//go:generate go run -tags generate github.com/jmattheis/goverter/cmd/goverter gen -build-tags="" ./pkg/meta/v1beta1
 
 // Replicate identical gRPC APIs
 

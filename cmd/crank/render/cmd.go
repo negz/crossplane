@@ -159,7 +159,7 @@ func (c *Cmd) Run(k *kong.Context, log logging.Logger) error { //nolint:gocognit
 		return errors.Wrapf(errs.ToAggregate(), "invalid Composition %q", comp.GetName())
 	}
 
-	if m := comp.Spec.Mode; m == nil || *m != v1.CompositionModePipeline {
+	if comp.Spec.Mode != v1.CompositionModePipeline {
 		return errors.Errorf("render only supports Composition Function pipelines: Composition %q must use spec.mode: Pipeline", comp.GetName())
 	}
 

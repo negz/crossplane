@@ -530,9 +530,45 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 // CompositeReconcilerOptions builds the options for a composite resource
 // reconciler. The options vary based on the supplied feature flags.
 func (r *Reconciler) CompositeReconcilerOptions(ctx context.Context, d *v1.CompositeResourceDefinition) []composite.ReconcilerOption {
+	// If TLS isn't configured for ESS we default to no support for connection
+	// details.
+	// TODO(negz): Do we need TLS for basic built-in Kubernetes secret support?
+	var fetcher managed.ConnectionDetailsFetcher = composite.ConnectionDetailsFetcherFn(func(_ context.Context, _ resource.ConnectionSecretOwner) (managed.ConnectionDetails, error) {
+		return managed.ConnectionDetails{}, nil
+	})
+
+	var pub managed.ConnectionPublisher = managed.ConnectionPublisherFns{
+		PublishConnectionFn: func(_ context.Context, _ resource.ConnectionSecretOwner, _ managed.ConnectionDetails) (bool, error) {
+			return false, nil
+		},
+		UnpublishConnectionFn: func(_ context.Context, _ resource.ConnectionSecretOwner, _ managed.ConnectionDetails) error {
+			return nil
+		},
+	}
+
+	if r.options.ESSOptions != nil && r.options.ESSOptions.TLSConfig != nil {
+		fetcher = connection.NewDetailsManager(r.engine.GetClient(), v1alpha1.StoreConfigGroupVersionKind, connection.WithTLSConfig(r.options.ESSOptions.TLSConfig))
+		pub = composite.NewSecretStoreConnectionPublisher(
+			connection.NewDetailsManager(r.engine.GetClient(), v1alpha1.StoreConfigGroupVersionKind, connection.WithTLSConfig(r.options.ESSOptions.TLSConfig)),
+			d.GetConnectionSecretKeys(),
+		)
+	}
+
+	// Wrap the PackagedFunctionRunner setup in main with support for loading
+	// extra resources to satisfy function requirements.
+	runner := composite.NewFetchingFunctionRunner(r.options.FunctionRunner, composite.NewExistingExtraResourcesFetcher(r.engine.GetClient()))
+
 	// The default set of reconciler options when no feature flags are enabled.
 	o := []composite.ReconcilerOption{
-		composite.WithConnectionPublishers(composite.NewAPIFilteredSecretPublisher(r.engine.GetClient(), d.GetConnectionSecretKeys())),
+		composite.WithConfigurator(composite.NewConfiguratorChain(
+			composite.NewAPINamingConfigurator(r.engine.GetClient()),
+			composite.NewAPIConfigurator(r.engine.GetClient()),
+		)),
+		composite.WithComposer(composite.NewFunctionComposer(r.engine.GetClient(), runner,
+			composite.WithComposedResourceObserver(composite.NewExistingComposedResourceObserver(r.engine.GetClient(), fetcher)),
+			composite.WithCompositeConnectionDetailsFetcher(fetcher),
+		)),
+		composite.WithConnectionPublishers(pub),
 		composite.WithCompositionSelector(composite.NewCompositionSelectorChain(
 			composite.NewEnforcedCompositionSelector(*d, r.record),
 			composite.NewAPIDefaultCompositionSelector(r.engine.GetClient(), *meta.ReferenceTo(d, v1.CompositeResourceDefinitionGroupVersionKind), r.record),
@@ -542,74 +578,6 @@ func (r *Reconciler) CompositeReconcilerOptions(ctx context.Context, d *v1.Compo
 		composite.WithRecorder(r.record.WithAnnotations("controller", composite.ControllerName(d.GetName()))),
 		composite.WithPollInterval(r.options.PollInterval),
 	}
-
-	// If external secret stores aren't enabled we just fetch connection details
-	// from Kubernetes secrets.
-	var fetcher managed.ConnectionDetailsFetcher = composite.NewSecretConnectionDetailsFetcher(r.engine.GetClient())
-
-	// We only want to enable ExternalSecretStore support if the relevant
-	// feature flag is enabled. Otherwise, we start the XR reconcilers with
-	// their default ConnectionPublisher and ConnectionDetailsFetcher.
-	// We also add a new Configurator for ExternalSecretStore which basically
-	// reflects PublishConnectionDetailsWithStoreConfigRef in Composition to
-	// the composite resource.
-	if r.options.Features.Enabled(features.EnableAlphaExternalSecretStores) {
-		pc := []managed.ConnectionPublisher{
-			composite.NewAPIFilteredSecretPublisher(r.engine.GetClient(), d.GetConnectionSecretKeys()),
-			composite.NewSecretStoreConnectionPublisher(connection.NewDetailsManager(r.engine.GetClient(), v1alpha1.StoreConfigGroupVersionKind,
-				connection.WithTLSConfig(r.options.ESSOptions.TLSConfig)), d.GetConnectionSecretKeys()),
-		}
-
-		// If external secret stores are enabled we need to support fetching
-		// connection details from both secrets and external stores.
-		fetcher = composite.ConnectionDetailsFetcherChain{
-			composite.NewSecretConnectionDetailsFetcher(r.engine.GetClient()),
-			connection.NewDetailsManager(r.engine.GetClient(), v1alpha1.StoreConfigGroupVersionKind, connection.WithTLSConfig(r.options.ESSOptions.TLSConfig)),
-		}
-
-		cc := composite.NewConfiguratorChain(
-			composite.NewAPINamingConfigurator(r.engine.GetClient()),
-			composite.NewAPIConfigurator(r.engine.GetClient()),
-			composite.NewSecretStoreConnectionDetailsConfigurator(r.engine.GetClient()),
-		)
-
-		o = append(o,
-			composite.WithConnectionPublishers(pc...),
-			composite.WithConfigurator(cc))
-	}
-
-	// This composer is used for mode: Resources Compositions (the default).
-	ptc := composite.NewPTComposer(r.engine.GetClient(), composite.WithComposedConnectionDetailsFetcher(fetcher))
-
-	// Wrap the PackagedFunctionRunner setup in main with support for loading
-	// extra resources to satisfy function requirements.
-	runner := composite.NewFetchingFunctionRunner(r.options.FunctionRunner, composite.NewExistingExtraResourcesFetcher(r.engine.GetClient()))
-
-	// This composer is used for mode: Pipeline Compositions.
-	fc := composite.NewFunctionComposer(r.engine.GetClient(), runner,
-		composite.WithComposedResourceObserver(composite.NewExistingComposedResourceObserver(r.engine.GetClient(), fetcher)),
-		composite.WithCompositeConnectionDetailsFetcher(fetcher),
-	)
-
-	// We use two different Composer implementations. One supports P&T (aka
-	// 'Resources mode') and the other Functions (aka 'Pipeline mode').
-	o = append(o, composite.WithComposer(composite.ComposerSelectorFn(func(cm *v1.CompositionMode) composite.Composer {
-		// Resources mode is the implicit default.
-		m := v1.CompositionModeResources
-		if cm != nil {
-			m = *cm
-		}
-		switch m {
-		case v1.CompositionModeResources:
-			return ptc
-		case v1.CompositionModePipeline:
-			return fc
-		default:
-			// This shouldn't be possible, but just in case return the
-			// default Composer.
-			return ptc
-		}
-	})))
 
 	// If realtime compositions are enabled we pass the ControllerEngine to the
 	// XR reconciler so that it can start watches for composed resources.

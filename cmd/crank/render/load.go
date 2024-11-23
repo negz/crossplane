@@ -32,7 +32,6 @@ import (
 
 	apiextensionsv1 "github.com/crossplane/crossplane/apis/apiextensions/v1"
 	pkgv1 "github.com/crossplane/crossplane/apis/pkg/v1"
-	pkgv1beta1 "github.com/crossplane/crossplane/apis/pkg/v1beta1"
 )
 
 // LoadCompositeResource from a YAML manifest.
@@ -85,7 +84,7 @@ func LoadFunctions(filesys afero.Fs, file string) ([]pkgv1.Function, error) {
 			return nil, errors.Wrap(err, "cannot parse YAML Function manifest")
 		}
 		switch gvk := f.GroupVersionKind(); gvk {
-		case pkgv1.FunctionGroupVersionKind, pkgv1beta1.FunctionGroupVersionKind:
+		case pkgv1.FunctionGroupVersionKind:
 			functions = append(functions, *f)
 		default:
 			return nil, errors.Errorf("not a function: %s/%s", gvk.Kind, f.GetName())

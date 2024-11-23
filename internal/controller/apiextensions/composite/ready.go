@@ -20,14 +20,11 @@ import (
 	"context"
 
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/utils/ptr"
 
 	xpv1 "github.com/crossplane/crossplane-runtime/apis/common/v1"
 	"github.com/crossplane/crossplane-runtime/pkg/errors"
 	"github.com/crossplane/crossplane-runtime/pkg/fieldpath"
 	"github.com/crossplane/crossplane-runtime/pkg/resource"
-
-	v1 "github.com/crossplane/crossplane/apis/apiextensions/v1"
 )
 
 // Error strings.
@@ -86,49 +83,6 @@ type MatchConditionReadinessCheck struct {
 
 	// Status is the status of the condition you'd like to match.
 	Status corev1.ConditionStatus
-}
-
-// ReadinessCheckFromV1 derives a ReadinessCheck from the supplied v1.ReadinessCheck.
-func ReadinessCheckFromV1(in *v1.ReadinessCheck) ReadinessCheck {
-	if in == nil {
-		return ReadinessCheck{}
-	}
-
-	out := ReadinessCheck{
-		Type: ReadinessCheckType(in.Type),
-	}
-	if in.FieldPath != "" {
-		out.FieldPath = ptr.To(in.FieldPath)
-	}
-
-	// NOTE(negz): ComposedTemplate doesn't use pointer values for optional
-	// strings, so today the empty string and 0 are equivalent to "unset".
-	if in.MatchString != "" {
-		out.MatchString = ptr.To(in.MatchString)
-	}
-	if in.MatchInteger != 0 {
-		out.MatchInteger = ptr.To[int64](in.MatchInteger)
-	}
-	if in.MatchCondition != nil {
-		out.MatchCondition = &MatchConditionReadinessCheck{
-			Type:   in.MatchCondition.Type,
-			Status: in.MatchCondition.Status,
-		}
-	}
-	return out
-}
-
-// ReadinessChecksFromComposedTemplate derives readiness checks from the supplied
-// composed template.
-func ReadinessChecksFromComposedTemplate(t *v1.ComposedTemplate) []ReadinessCheck {
-	if t == nil {
-		return nil
-	}
-	out := make([]ReadinessCheck, len(t.ReadinessChecks))
-	for i := range t.ReadinessChecks {
-		out[i] = ReadinessCheckFromV1(&t.ReadinessChecks[i])
-	}
-	return out
 }
 
 // TODO(negz): Ideally we'd validate P&T readiness checks (which are specified

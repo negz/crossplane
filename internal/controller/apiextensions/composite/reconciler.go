@@ -207,20 +207,20 @@ type Composer interface {
 	Compose(ctx context.Context, xr *composite.Unstructured, req CompositionRequest) (CompositionResult, error)
 }
 
+// A NopComposer does nothing.
+type NopComposer struct{}
+
+// Compose does nothing.
+func (c *NopComposer) Compose(_ context.Context, _ *composite.Unstructured, _ CompositionRequest) (CompositionResult, error) {
+	return CompositionResult{}, nil
+}
+
 // A ComposerFn composes resources.
 type ComposerFn func(ctx context.Context, xr *composite.Unstructured, req CompositionRequest) (CompositionResult, error)
 
 // Compose resources.
 func (fn ComposerFn) Compose(ctx context.Context, xr *composite.Unstructured, req CompositionRequest) (CompositionResult, error) {
 	return fn(ctx, xr, req)
-}
-
-// A ComposerSelectorFn selects the appropriate Composer for a mode.
-type ComposerSelectorFn func(*v1.CompositionMode) Composer
-
-// Compose calls the Composer returned by calling fn.
-func (fn ComposerSelectorFn) Compose(ctx context.Context, xr *composite.Unstructured, req CompositionRequest) (CompositionResult, error) {
-	return fn(req.Revision.Spec.Mode).Compose(ctx, xr, req)
 }
 
 // ReconcilerOption is used to configure the Reconciler.
@@ -406,13 +406,17 @@ func NewReconciler(c client.Client, of resource.CompositeKind, opts ...Reconcile
 			CompositionSelector: NewAPILabelSelectorResolver(c),
 			Configurator:        NewConfiguratorChain(NewAPINamingConfigurator(c), NewAPIConfigurator(c)),
 
-			// TODO(negz): In practice this is a filtered publisher that will
-			// never filter any keys. Is there an unfiltered variant we could
-			// use by default instead?
-			ConnectionPublisher: NewAPIFilteredSecretPublisher(c, []string{}),
+			ConnectionPublisher: managed.ConnectionPublisherFns{
+				PublishConnectionFn: func(_ context.Context, _ resource.ConnectionSecretOwner, _ managed.ConnectionDetails) (bool, error) {
+					return false, nil
+				},
+				UnpublishConnectionFn: func(_ context.Context, _ resource.ConnectionSecretOwner, _ managed.ConnectionDetails) error {
+					return nil
+				},
+			},
 		},
 
-		resource: NewPTComposer(c),
+		resource: &NopComposer{},
 
 		// Dynamic watches are disabled by default.
 		engine: &NopWatchStarter{},

@@ -21,10 +21,7 @@ import (
 	"math/rand"
 	"time"
 
-	"github.com/google/go-cmp/cmp"
-	"github.com/google/go-cmp/cmp/cmpopts"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -32,7 +29,6 @@ import (
 	"github.com/crossplane/crossplane-runtime/pkg/errors"
 	"github.com/crossplane/crossplane-runtime/pkg/event"
 	"github.com/crossplane/crossplane-runtime/pkg/meta"
-	"github.com/crossplane/crossplane-runtime/pkg/reconciler/managed"
 	"github.com/crossplane/crossplane-runtime/pkg/resource"
 
 	v1 "github.com/crossplane/crossplane/apis/apiextensions/v1"
@@ -41,8 +37,6 @@ import (
 
 // Error strings.
 const (
-	errApplySecret = "cannot apply connection secret"
-
 	errNoCompatibleComposition         = "no compatible Compositions found"
 	errNoCompatibleCompositionRevision = "no compatible CompositionRevisions found"
 	errGetComposition                  = "cannot get Composition"
@@ -60,68 +54,6 @@ const (
 	reasonCompositionSelection    event.Reason = "CompositionSelection"
 	reasonCompositionUpdatePolicy event.Reason = "CompositionUpdatePolicy"
 )
-
-// APIFilteredSecretPublisher publishes ConnectionDetails content after filtering
-// it through a set of permitted keys.
-type APIFilteredSecretPublisher struct {
-	client resource.Applicator
-	filter []string
-}
-
-// NewAPIFilteredSecretPublisher returns a ConnectionPublisher that only
-// publishes connection secret keys that are included in the supplied filter.
-func NewAPIFilteredSecretPublisher(c client.Client, filter []string) *APIFilteredSecretPublisher {
-	return &APIFilteredSecretPublisher{client: resource.NewAPIPatchingApplicator(c), filter: filter}
-}
-
-// PublishConnection publishes the supplied ConnectionDetails to the Secret
-// referenced in the resource.
-func (a *APIFilteredSecretPublisher) PublishConnection(ctx context.Context, o resource.ConnectionSecretOwner, c managed.ConnectionDetails) (bool, error) {
-	// This resource does not want to expose a connection secret.
-	if o.GetWriteConnectionSecretToReference() == nil {
-		return false, nil
-	}
-
-	s := resource.ConnectionSecretFor(o, o.GetObjectKind().GroupVersionKind())
-	m := map[string]bool{}
-	for _, key := range a.filter {
-		m[key] = true
-	}
-	for key, val := range c {
-		// If the filter does not have any keys, we allow all given keys to be
-		// published.
-		if len(m) == 0 || m[key] {
-			s.Data[key] = val
-		}
-	}
-
-	err := a.client.Apply(ctx, s,
-		resource.ConnectionSecretMustBeControllableBy(o.GetUID()),
-		resource.AllowUpdateIf(func(current, desired runtime.Object) bool {
-			// We consider the update to be a no-op and don't allow it if the
-			// current and existing secret data are identical.
-
-			//nolint:forcetypeassert // These will always be secrets.
-			return !cmp.Equal(current.(*corev1.Secret).Data, desired.(*corev1.Secret).Data, cmpopts.EquateEmpty())
-		}),
-	)
-	if resource.IsNotAllowed(err) {
-		// The update was not allowed because it was a no-op.
-		return false, nil
-	}
-	if err != nil {
-		return false, errors.Wrap(err, errApplySecret)
-	}
-
-	return true, nil
-}
-
-// UnpublishConnection is no-op since PublishConnection only creates resources
-// that will be garbage collected by Kubernetes when the managed resource is
-// deleted.
-func (a *APIFilteredSecretPublisher) UnpublishConnection(_ context.Context, _ resource.ConnectionSecretOwner, _ managed.ConnectionDetails) error {
-	return nil
-}
 
 // An APIRevisionFetcher selects the appropriate CompositionRevision for a
 // composite resource, fetches it, and returns it as a Composition. This is done
@@ -356,6 +288,9 @@ func NewAPIConfigurator(c client.Client) *APIConfigurator {
 	return &APIConfigurator{client: c}
 }
 
+// TODO(negz): Is this the only XR -> Composition compatibility test? If so,
+// refactor it. It doesn't use its client anymore. If not, delete it.
+
 // An APIConfigurator configures a composite resource using its
 // composition.
 type APIConfigurator struct {
@@ -364,22 +299,12 @@ type APIConfigurator struct {
 
 // Configure any required fields that were omitted from the composite resource
 // by copying them from its composition.
-func (c *APIConfigurator) Configure(ctx context.Context, cp resource.Composite, rev *v1.CompositionRevision) error {
+func (c *APIConfigurator) Configure(_ context.Context, cp resource.Composite, rev *v1.CompositionRevision) error {
 	apiVersion, kind := cp.GetObjectKind().GroupVersionKind().ToAPIVersionAndKind()
 	if rev.Spec.CompositeTypeRef.APIVersion != apiVersion || rev.Spec.CompositeTypeRef.Kind != kind {
 		return errors.New(errCompositionNotCompatible)
 	}
-
-	if cp.GetWriteConnectionSecretToReference() != nil || rev.Spec.WriteConnectionSecretsToNamespace == nil {
-		return nil
-	}
-
-	cp.SetWriteConnectionSecretToReference(&xpv1.SecretReference{
-		Name:      string(cp.GetUID()),
-		Namespace: *rev.Spec.WriteConnectionSecretsToNamespace,
-	})
-
-	return errors.Wrap(c.client.Update(ctx, cp), errUpdateComposite)
+	return nil
 }
 
 // NewAPINamingConfigurator returns a Configurator that sets the root name prefixKu

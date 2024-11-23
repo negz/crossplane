@@ -2,7 +2,6 @@ package composition
 
 import (
 	"context"
-	"encoding/json"
 	"strings"
 	"testing"
 
@@ -11,10 +10,8 @@ import (
 	"k8s.io/apiextensions-apiserver/pkg/apis/apiextensions"
 	extv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/validation/field"
-	"k8s.io/utils/ptr"
 
 	v1 "github.com/crossplane/crossplane/apis/apiextensions/v1"
 )
@@ -38,26 +35,7 @@ func TestValidatorValidate(t *testing.T) {
 				errs: nil,
 			},
 			args: args{
-				comp:     buildDefaultComposition(t, v1.SchemaAwareCompositionValidationModeStrict, map[string]any{"someOtherField": "test"}),
-				gkToCRDs: nil,
-			},
-		},
-		"RejectStrictNoCRDsWithPatches": {
-			reason: "Should reject a Composition if no CRDs are available and patches defined",
-			want: want{
-				errs: field.ErrorList{
-					{
-						Type:  field.ErrorTypeInternal,
-						Field: "spec.resources[0]",
-					},
-				},
-			},
-			args: args{
-				comp: buildDefaultComposition(t, v1.SchemaAwareCompositionValidationModeStrict, map[string]any{"someOtherField": "test"},
-					withPatches(0, v1.Patch{
-						FromFieldPath: ptr.To("spec.someField"),
-						ToFieldPath:   ptr.To("spec.someOtherField"),
-					})),
+				comp:     buildDefaultComposition(t, v1.SchemaAwareCompositionValidationModeStrict),
 				gkToCRDs: nil,
 			},
 		},
@@ -66,7 +44,7 @@ func TestValidatorValidate(t *testing.T) {
 			want:   want{errs: nil},
 			args: args{
 				gkToCRDs: defaultGKToCRDs(),
-				comp:     buildDefaultComposition(t, v1.SchemaAwareCompositionValidationModeStrict, map[string]any{"someOtherField": "test"}),
+				comp:     buildDefaultComposition(t, v1.SchemaAwareCompositionValidationModeStrict),
 			},
 		},
 		"AcceptStrictInvalid": {
@@ -75,284 +53,7 @@ func TestValidatorValidate(t *testing.T) {
 			want: want{errs: nil},
 			args: args{
 				gkToCRDs: defaultGKToCRDs(),
-				comp:     buildDefaultComposition(t, v1.SchemaAwareCompositionValidationModeStrict, nil),
-			},
-		},
-		"AcceptStrictRequiredFieldByPatch": {
-			reason: "Should accept a Composition with a required field defined only by a patch if all CRDs are available",
-			want:   want{errs: nil},
-			args: args{
-				gkToCRDs: defaultGKToCRDs(),
-				comp: buildDefaultComposition(t, v1.SchemaAwareCompositionValidationModeStrict, nil, withPatches(0, v1.Patch{
-					Type:          v1.PatchTypeFromCompositeFieldPath,
-					FromFieldPath: ptr.To("spec.someField"),
-					ToFieldPath:   ptr.To("spec.someOtherField"),
-				})),
-			},
-		},
-		"RejectStrictInvalidFromFieldPath": {
-			reason: "Should reject a Composition with a patch using a field not allowed by the Composite resource, if all CRDs are found",
-			want: want{
-				errs: field.ErrorList{
-					{
-						Type:  field.ErrorTypeInvalid,
-						Field: "spec.resources[0].patches[0].fromFieldPath",
-					},
-				},
-			},
-			args: args{
-				gkToCRDs: defaultGKToCRDs(),
-				comp: buildDefaultComposition(t, v1.SchemaAwareCompositionValidationModeStrict, nil, withPatches(0, v1.Patch{
-					Type:          v1.PatchTypeFromCompositeFieldPath,
-					FromFieldPath: ptr.To("spec.someWrongField"),
-					ToFieldPath:   ptr.To("spec.someOtherField"),
-				})),
-			},
-		},
-		"RejectStrictInvalidToFieldPath": {
-			reason: "Should reject a Composition with a patch using a field not allowed by the schema of the Managed resource, if all CRDs are found",
-			want: want{
-				errs: field.ErrorList{
-					{
-						Type:  field.ErrorTypeInvalid,
-						Field: "spec.resources[0].patches[0].toFieldPath",
-					},
-				},
-			},
-			args: args{
-				gkToCRDs: defaultGKToCRDs(),
-				comp: buildDefaultComposition(t, v1.SchemaAwareCompositionValidationModeStrict, map[string]any{"someOtherField": "test"}, withPatches(0, v1.Patch{
-					Type:          v1.PatchTypeFromCompositeFieldPath,
-					FromFieldPath: ptr.To("spec.someField"),
-					ToFieldPath:   ptr.To("spec.someOtherWrongField"),
-				})),
-			},
-		},
-		"RejectStrictPatchMismatchTypes": {
-			reason: "Should reject a Composition with a patch between two different types, if all CRDs are found",
-			want: want{
-				errs: field.ErrorList{
-					{
-						Type:  field.ErrorTypeRequired,
-						Field: "spec.resources[0].patches[0].transforms",
-					},
-				},
-			},
-			args: args{
-				gkToCRDs: buildGkToCRDs(
-					defaultCompositeCrdBuilder().withOption(func(crd *extv1.CustomResourceDefinition) {
-						crd.Spec.Versions[0].Schema.OpenAPIV3Schema.Properties["spec"].Properties["someField"] = extv1.JSONSchemaProps{
-							Type: "integer",
-						}
-					}).build(),
-					defaultManagedCrdBuilder().build(),
-				),
-				comp: buildDefaultComposition(t, v1.SchemaAwareCompositionValidationModeStrict, nil, withPatches(0, v1.Patch{
-					Type:          v1.PatchTypeFromCompositeFieldPath,
-					FromFieldPath: ptr.To("spec.someField"),
-					ToFieldPath:   ptr.To("spec.someOtherField"),
-				})),
-			},
-		},
-		"RejectStrictPatchMismatchTypeWithMathTransform": {
-			reason: "Should reject a Composition with a math transformation resulting in the wrong final type, if validation mode is strict and all CRDs are found",
-			want: want{
-				errs: field.ErrorList{
-					{
-						Type:  field.ErrorTypeInvalid,
-						Field: "spec.resources[0].patches[0].transforms[0]",
-					},
-				},
-			},
-			args: args{
-				gkToCRDs: defaultGKToCRDs(),
-				comp: buildDefaultComposition(t, v1.SchemaAwareCompositionValidationModeLoose, nil, withPatches(0, v1.Patch{
-					Type:          v1.PatchTypeFromCompositeFieldPath,
-					FromFieldPath: ptr.To("spec.someField"),
-					ToFieldPath:   ptr.To("spec.someOtherField"),
-					Transforms: []v1.Transform{{
-						Type: v1.TransformTypeMath,
-						Math: &v1.MathTransform{
-							Multiply: ptr.To[int64](int64(2)),
-						},
-					}},
-				})),
-			},
-		},
-		"RejectStrictPatchMismatchTypeWithConvertTransform": {
-			reason: "Should reject a Composition with a convert transformation resulting in the wrong final type, if all CRDs are found",
-			want: want{
-				errs: field.ErrorList{
-					{
-						Type:  field.ErrorTypeInvalid,
-						Field: "spec.resources[0].patches[0].transforms",
-					},
-				},
-			},
-			args: args{
-				gkToCRDs: defaultGKToCRDs(),
-				comp: buildDefaultComposition(t, v1.SchemaAwareCompositionValidationModeLoose, nil, withPatches(0, v1.Patch{
-					Type:          v1.PatchTypeFromCompositeFieldPath,
-					FromFieldPath: ptr.To("spec.someField"),
-					ToFieldPath:   ptr.To("spec.someOtherField"),
-					Transforms: []v1.Transform{{
-						Type: v1.TransformTypeConvert,
-						Convert: &v1.ConvertTransform{
-							ToType: "int64",
-						},
-					}},
-				})),
-			},
-		},
-		"AcceptStrictPatchWithCombinePatch": {
-			reason: "Should accept a Composition with a combine patch, if all CRDs are found",
-			args: args{
-				gkToCRDs: buildGkToCRDs(
-					defaultCompositeCrdBuilder().withOption(func(crd *extv1.CustomResourceDefinition) {
-						spec := crd.Spec.Versions[0].Schema.OpenAPIV3Schema.Properties["spec"]
-						spec.Properties["someOtherOtherField"] = extv1.JSONSchemaProps{
-							Type: "string",
-						}
-
-						spec.Required = append(spec.Required,
-							"someOtherOtherField")
-						crd.Spec.Versions[0].Schema.OpenAPIV3Schema.Properties["spec"] = spec
-					}).build(),
-					defaultManagedCrdBuilder().build(),
-				),
-				comp: buildDefaultComposition(t, v1.SchemaAwareCompositionValidationModeLoose, nil, withPatches(0, v1.Patch{
-					Type: v1.PatchTypeCombineFromComposite,
-					Combine: &v1.Combine{
-						Variables: []v1.CombineVariable{
-							{
-								FromFieldPath: "spec.someField",
-							},
-							{
-								FromFieldPath: "spec.someOtherOtherField",
-							},
-						},
-						Strategy: v1.CombineStrategyString,
-						String: &v1.StringCombine{
-							Format: "%s-%s",
-						},
-					},
-					ToFieldPath: ptr.To("spec.someOtherField"),
-				})),
-			},
-		},
-		"RejectStrictPatchWithCombinePatchMissingField": {
-			reason: "Should reject a Composition with a combine patch with missing fields, if validation mode is strict and all CRDs are found",
-			want: want{
-				errs: field.ErrorList{
-					{
-						Type:  field.ErrorTypeInvalid,
-						Field: "spec.resources[0].patches[0].combine",
-					},
-				},
-			},
-			args: args{
-				gkToCRDs: defaultGKToCRDs(),
-				comp: buildDefaultComposition(t, v1.SchemaAwareCompositionValidationModeStrict, nil, withPatches(0, v1.Patch{
-					Type: v1.PatchTypeCombineFromComposite,
-					Combine: &v1.Combine{
-						Variables: []v1.CombineVariable{
-							{
-								FromFieldPath: "spec.someField",
-							},
-							{
-								FromFieldPath: "spec.someNonDefinedField",
-							},
-						},
-						Strategy: v1.CombineStrategyString,
-						String: &v1.StringCombine{
-							Format: "%s-%s",
-						},
-					},
-					ToFieldPath: ptr.To("spec.someOtherField"),
-				})),
-			},
-		},
-		"CRDMultipleSchemas": {
-			reason: "Should accept a Composition with a patch that references a field that exists in multiple schemas, if all CRDs are found",
-			want: want{
-				errs: nil,
-			},
-			args: args{
-				gkToCRDs: buildGkToCRDs(defaultManagedCrdBuilder().withOption(func(d *extv1.CustomResourceDefinition) {
-					d.Spec.Versions = append(d.Spec.Versions, *d.Spec.Versions[0].DeepCopy())
-					d.Spec.Versions[len(d.Spec.Versions)-1].Name = "v2"
-					d.Spec.Versions[len(d.Spec.Versions)-1].Schema.OpenAPIV3Schema.Properties["spec"].Properties["someNewField"] = extv1.JSONSchemaProps{
-						Type: "string",
-					}
-				}).build(), defaultCompositeCrdBuilder().build()),
-				comp: buildDefaultComposition(t, v1.SchemaAwareCompositionValidationModeLoose, nil, withPatches(0, v1.Patch{
-					Type:          v1.PatchTypeFromCompositeFieldPath,
-					FromFieldPath: ptr.To("spec.someField"),
-					ToFieldPath:   ptr.To("spec.someOtherField"),
-				})),
-			},
-		},
-		"PatchSetsAreHandledProperly": {
-			reason: "Should accept a Composition with a patch that references a patchset, if all CRDs are found",
-			want: want{
-				errs: nil,
-			},
-			args: args{
-				gkToCRDs: defaultGKToCRDs(),
-				comp: buildDefaultComposition(t, v1.SchemaAwareCompositionValidationModeLoose, nil, withPatchSets(
-					v1.PatchSet{
-						Name: "some-patch-set",
-						Patches: []v1.Patch{{
-							Type:          v1.PatchTypeFromCompositeFieldPath,
-							FromFieldPath: ptr.To("spec.someField"),
-							ToFieldPath:   ptr.To("spec.someOtherField"),
-						}},
-					},
-				), withPatches(0, v1.Patch{
-					Type:         v1.PatchTypePatchSet,
-					PatchSetName: ptr.To("some-patch-set"),
-				})),
-			},
-		},
-		"PatchSetsAreReportedProperly": {
-			reason: "Should reject a Composition with an invalid combine patch as a patchSet with missing fields, if validation mode is strict and all CRDs are found",
-			want: want{
-				errs: field.ErrorList{
-					{
-						Type:  field.ErrorTypeInvalid,
-						Field: "spec.resources[0].patches[0].patchSets[0].patches[0].combine",
-					},
-				},
-			},
-			args: args{
-				gkToCRDs: defaultGKToCRDs(),
-				comp: buildDefaultComposition(t, v1.SchemaAwareCompositionValidationModeStrict, nil,
-					withPatchSets(
-						v1.PatchSet{
-							Name: "some-patch-set",
-							Patches: []v1.Patch{{
-								Type: v1.PatchTypeCombineFromComposite,
-								Combine: &v1.Combine{
-									Variables: []v1.CombineVariable{
-										{
-											FromFieldPath: "spec.someField",
-										},
-										{
-											FromFieldPath: "spec.someNonDefinedField",
-										},
-									},
-									Strategy: v1.CombineStrategyString,
-									String: &v1.StringCombine{
-										Format: "%s-%s",
-									},
-								},
-								ToFieldPath: ptr.To("spec.someOtherField"),
-							}},
-						},
-					), withPatches(0, v1.Patch{
-						Type:         v1.PatchTypePatchSet,
-						PatchSetName: ptr.To("some-patch-set"),
-					})),
+				comp:     buildDefaultComposition(t, v1.SchemaAwareCompositionValidationModeStrict),
 			},
 		},
 	}
@@ -382,15 +83,6 @@ const (
 	testGroup         = "resources.test.com"
 	testGroupSingular = "resource.test.com"
 )
-
-func marshalJSON(t *testing.T, obj interface{}) []byte {
-	t.Helper()
-	b, err := json.Marshal(obj)
-	if err != nil {
-		t.Errorf("Failed to marshal object: %v", err)
-	}
-	return b
-}
 
 func defaultCompositeCrdBuilder() *crdBuilder {
 	return newCRDBuilder("Composite", "v1").withOption(specSchemaOption("v1", extv1.JSONSchemaProps{
@@ -526,23 +218,8 @@ func (b *crdBuilder) buildExtV1() *extv1.CustomResourceDefinition {
 
 type compositionBuilderOption func(c *v1.Composition)
 
-func withPatches(index int, patches ...v1.Patch) compositionBuilderOption {
-	return func(c *v1.Composition) {
-		c.Spec.Resources[index].Patches = patches
-	}
-}
-
-func withPatchSets(patchSets ...v1.PatchSet) compositionBuilderOption {
-	return func(c *v1.Composition) {
-		c.Spec.PatchSets = patchSets
-	}
-}
-
-func buildDefaultComposition(t *testing.T, validationMode v1.CompositionValidationMode, spec map[string]any, opts ...compositionBuilderOption) *v1.Composition {
+func buildDefaultComposition(t *testing.T, validationMode v1.CompositionValidationMode, opts ...compositionBuilderOption) *v1.Composition {
 	t.Helper()
-	if spec == nil {
-		spec = map[string]any{}
-	}
 	c := &v1.Composition{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "testComposition",
@@ -555,20 +232,10 @@ func buildDefaultComposition(t *testing.T, validationMode v1.CompositionValidati
 				APIVersion: testGroup + "/v1",
 				Kind:       "Composite",
 			},
-			Resources: []v1.ComposedTemplate{
+			Mode: v1.CompositionModePipeline,
+			Pipeline: []v1.PipelineStep{
 				{
-					Name: ptr.To("test"),
-					Base: runtime.RawExtension{
-						Raw: marshalJSON(t, map[string]any{
-							"apiVersion": testGroup + "/v1",
-							"kind":       "Managed",
-							"metadata": map[string]any{
-								"name":      "test",
-								"namespace": "testns",
-							},
-							"spec": spec,
-						}),
-					},
+					// TODO(negz): This probably shouldn't be valid.
 				},
 			},
 		},
@@ -578,18 +245,4 @@ func buildDefaultComposition(t *testing.T, validationMode v1.CompositionValidati
 		opt(c)
 	}
 	return c
-}
-
-func buildGkToCRDs(crds ...*apiextensions.CustomResourceDefinition) map[schema.GroupKind]apiextensions.CustomResourceDefinition {
-	m := map[schema.GroupKind]apiextensions.CustomResourceDefinition{}
-	for _, crd := range crds {
-		if crd == nil {
-			continue
-		}
-		m[schema.GroupKind{
-			Group: crd.Spec.Group,
-			Kind:  crd.Spec.Names.Kind,
-		}] = *crd
-	}
-	return m
 }

@@ -34,8 +34,6 @@ import (
 
 	v1 "github.com/crossplane/crossplane/apis/apiextensions/v1"
 	pkgmetav1 "github.com/crossplane/crossplane/apis/pkg/meta/v1"
-	pkgmetav1alpha1 "github.com/crossplane/crossplane/apis/pkg/meta/v1alpha1"
-	pkgmetav1beta1 "github.com/crossplane/crossplane/apis/pkg/meta/v1beta1"
 	"github.com/crossplane/crossplane/internal/version"
 	"github.com/crossplane/crossplane/internal/version/fake"
 )
@@ -50,21 +48,6 @@ metadata:
 kind: CustomResourceDefinition
 metadata:
   name: test`)
-
-	v1alpha1ProvBytes = []byte(`apiVersion: meta.pkg.crossplane.io/v1alpha1
-kind: Provider
-metadata:
-  name: test`)
-
-	v1alpha1ConfBytes = []byte(`apiVersion: meta.pkg.crossplane.io/v1alpha1
-kind: Configuration
-metadata:
-  name: test`)
-
-	v1beta1FuncBytes = []byte(`apiVersion: meta.pkg.crossplane.io/v1beta1
-  kind: Function
-  metadata:
-    name: test`)
 
 	v1ProvBytes = []byte(`apiVersion: meta.pkg.crossplane.io/v1
 kind: Provider
@@ -91,26 +74,20 @@ kind: Composition
 metadata:
   name: test`)
 
-	v1beta1crd       = &apiextensions.CustomResourceDefinition{}
-	_                = yaml.Unmarshal(v1beta1CRDBytes, v1beta1crd)
-	v1crd            = &apiextensions.CustomResourceDefinition{}
-	_                = yaml.Unmarshal(v1CRDBytes, v1crd)
-	v1alpha1ProvMeta = &pkgmetav1alpha1.Provider{}
-	_                = yaml.Unmarshal(v1alpha1ProvBytes, v1alpha1ProvMeta)
-	v1alpha1ConfMeta = &pkgmetav1alpha1.Configuration{}
-	_                = yaml.Unmarshal(v1alpha1ConfBytes, v1alpha1ConfMeta)
-	v1beta1FuncMeta  = &pkgmetav1beta1.Function{}
-	_                = yaml.Unmarshal(v1beta1FuncBytes, v1beta1FuncMeta)
-	v1ProvMeta       = &pkgmetav1.Provider{}
-	_                = yaml.Unmarshal(v1ProvBytes, v1ProvMeta)
-	v1ConfMeta       = &pkgmetav1.Configuration{}
-	_                = yaml.Unmarshal(v1ConfBytes, v1ConfMeta)
-	v1FuncMeta       = &pkgmetav1.Function{}
-	_                = yaml.Unmarshal(v1FuncBytes, v1FuncMeta)
-	v1XRD            = &v1.CompositeResourceDefinition{}
-	_                = yaml.Unmarshal(v1XRDBytes, v1XRD)
-	v1Comp           = &v1.Composition{}
-	_                = yaml.Unmarshal(v1CompBytes, v1Comp)
+	v1beta1crd = &apiextensions.CustomResourceDefinition{}
+	_          = yaml.Unmarshal(v1beta1CRDBytes, v1beta1crd)
+	v1crd      = &apiextensions.CustomResourceDefinition{}
+	_          = yaml.Unmarshal(v1CRDBytes, v1crd)
+	v1ProvMeta = &pkgmetav1.Provider{}
+	_          = yaml.Unmarshal(v1ProvBytes, v1ProvMeta)
+	v1ConfMeta = &pkgmetav1.Configuration{}
+	_          = yaml.Unmarshal(v1ConfBytes, v1ConfMeta)
+	v1FuncMeta = &pkgmetav1.Function{}
+	_          = yaml.Unmarshal(v1FuncBytes, v1FuncMeta)
+	v1XRD      = &v1.CompositeResourceDefinition{}
+	_          = yaml.Unmarshal(v1XRDBytes, v1XRD)
+	v1Comp     = &v1.Composition{}
+	_          = yaml.Unmarshal(v1CompBytes, v1Comp)
 
 	meta, _ = BuildMetaScheme()
 	obj, _  = BuildObjectScheme()
@@ -118,11 +95,11 @@ metadata:
 )
 
 func TestOneMeta(t *testing.T) {
-	oneR := bytes.NewReader(bytes.Join([][]byte{v1beta1CRDBytes, v1alpha1ProvBytes}, []byte("\n---\n")))
+	oneR := bytes.NewReader(bytes.Join([][]byte{v1beta1CRDBytes, v1ProvBytes}, []byte("\n---\n")))
 	oneMeta, _ := p.Parse(context.TODO(), io.NopCloser(oneR))
 	noneR := bytes.NewReader(v1beta1CRDBytes)
 	noneMeta, _ := p.Parse(context.TODO(), io.NopCloser(noneR))
-	multiR := bytes.NewReader(bytes.Join([][]byte{v1alpha1ProvBytes, v1alpha1ProvBytes}, []byte("\n---\n")))
+	multiR := bytes.NewReader(bytes.Join([][]byte{v1ProvBytes, v1ConfBytes}, []byte("\n---\n")))
 	multiMeta, _ := p.Parse(context.TODO(), io.NopCloser(multiR))
 
 	cases := map[string]struct {
@@ -163,10 +140,6 @@ func TestIsProvider(t *testing.T) {
 		obj    runtime.Object
 		err    error
 	}{
-		"v1alpha1": {
-			reason: "Should not return error if object is a v1alpha1 provider.",
-			obj:    v1alpha1ProvMeta,
-		},
 		"v1": {
 			reason: "Should not return error if object is a v1 provider.",
 			obj:    v1ProvMeta,
@@ -195,10 +168,6 @@ func TestIsConfiguration(t *testing.T) {
 		obj    runtime.Object
 		err    error
 	}{
-		"v1alpha1": {
-			reason: "Should not return error if object is a v1alpha1 configuration.",
-			obj:    v1alpha1ConfMeta,
-		},
 		"v1": {
 			reason: "Should not return error if object is a v1 configuration.",
 			obj:    v1ConfMeta,
@@ -227,12 +196,6 @@ func TestIsFunction(t *testing.T) {
 		obj    runtime.Object
 		err    error
 	}{
-		// Function packages were introduced at v1beta1. There was never a
-		// v1alpha1 version of the package metadata.
-		"v1beta1": {
-			reason: "Should not return error if object is a v1beta1 function.",
-			obj:    v1beta1FuncMeta,
-		},
 		"v1": {
 			reason: "Should not return error if object is a v1 function.",
 			obj:    v1FuncMeta,
@@ -419,7 +382,7 @@ func TestIsCRD(t *testing.T) {
 		},
 		"ErrNotCRD": {
 			reason: "Should return error if object is not CRD.",
-			obj:    v1alpha1ConfMeta,
+			obj:    v1ConfMeta,
 			err:    errors.New(errNotCRD),
 		},
 	}
