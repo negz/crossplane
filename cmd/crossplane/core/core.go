@@ -109,7 +109,6 @@ type startCommand struct {
 	TLSClientSecretName string `env:"TLS_CLIENT_SECRET_NAME" help:"The name of the TLS Secret that will be store Crossplane's client certificate."`
 	TLSClientCertsDir   string `env:"TLS_CLIENT_CERTS_DIR"   help:"The path of the folder which will store TLS client certificate of Crossplane."`
 
-	EnableExternalSecretStores      bool `group:"Alpha Features:" help:"Enable support for External Secret Stores."`
 	EnableUsages                    bool `group:"Alpha Features:" help:"Enable support for deletion ordering and resource protection with Usages."`
 	EnableRealtimeCompositions      bool `group:"Alpha Features:" help:"Enable support for realtime compositions, i.e. watching composed resources and reconciling compositions immediately when any of the composed resources is updated."`
 	EnableSSAClaims                 bool `group:"Alpha Features:" help:"Enable support for using Kubernetes server-side apply to sync claims with composite resources (XRs)."`
@@ -118,20 +117,6 @@ type startCommand struct {
 
 	EnableCompositionWebhookSchemaValidation bool `default:"true" group:"Beta Features:" help:"Enable support for Composition validation using schemas."`
 	EnableDeploymentRuntimeConfigs           bool `default:"true" group:"Beta Features:" help:"Enable support for Deployment Runtime Configs."`
-
-	// These are GA features that previously had alpha or beta feature flags.
-	// You can't turn off a GA feature. We maintain the flags to avoid breaking
-	// folks who are passing them, but they do nothing. The flags are hidden so
-	// they don't show up in the help output.
-	EnableCompositionRevisions               bool `default:"true" hidden:""`
-	EnableCompositionFunctions               bool `default:"true" hidden:""`
-	EnableCompositionFunctionsExtraResources bool `default:"true" hidden:""`
-
-	// These are alpha features that we've removed support for. Crossplane
-	// returns an error when you enable them. This ensures you'll see an
-	// explicit and informative error on startup, instead of a potentially
-	// surprising one later.
-	EnableEnvironmentConfigs bool `hidden:""`
 }
 
 // Run core Crossplane controllers.
@@ -199,28 +184,24 @@ func (c *startCommand) Run(s *runtime.Scheme, log logging.Logger) error { //noli
 	})
 	defer eb.Shutdown()
 
+	tcfg, err := certificates.LoadMTLSConfig(
+		filepath.Join(c.TLSClientCertsDir, initializer.SecretKeyCACert),
+		filepath.Join(c.TLSClientCertsDir, corev1.TLSCertKey),
+		filepath.Join(c.TLSClientCertsDir, corev1.TLSPrivateKeyKey),
+		false)
+	if err != nil {
+		return errors.Wrap(err, "cannot load TLS certificates for external secret stores")
+	}
+
 	o := controller.Options{
 		Logger:                  log,
 		MaxConcurrentReconciles: c.MaxReconcileRate,
 		PollInterval:            c.PollInterval,
 		GlobalRateLimiter:       ratelimiter.NewGlobal(c.MaxReconcileRate),
 		Features:                &feature.Flags{},
-	}
-
-	if !c.EnableCompositionRevisions {
-		log.Info("Composition Revisions are GA and cannot be disabled. The --enable-composition-revisions flag will be removed in a future release.")
-	}
-	if !c.EnableCompositionFunctions {
-		log.Info("Composition Functions are GA and cannot be disabled. The --enable-composition-functions flag will be removed in a future release.")
-	}
-	if !c.EnableCompositionFunctionsExtraResources {
-		log.Info("Extra Resources are GA and cannot be disabled. The --enable-composition-functions-extra-resources flag will be removed in a future release.")
-	}
-
-	// TODO(negz): Include a link to a migration guide.
-	if c.EnableEnvironmentConfigs {
-		//nolint:revive // This is long. It's easier to read with punctuation.
-		return errors.New("Crossplane no longer supports loading and patching EnvironmentConfigs natively. Please use function-environment-configs instead. The --enable-environment-configs flag will be removed in a future release.")
+		ESSOptions: &controller.ESSOptions{
+			TLSConfig: tcfg,
+		},
 	}
 
 	clienttls, err := certificates.LoadMTLSConfig(
@@ -252,23 +233,6 @@ func (c *startCommand) Run(s *runtime.Scheme, log logging.Logger) error { //noli
 	if c.EnableUsages {
 		o.Features.Enable(features.EnableAlphaUsages)
 		log.Info("Alpha feature enabled", "flag", features.EnableAlphaUsages)
-	}
-	if c.EnableExternalSecretStores {
-		o.Features.Enable(features.EnableAlphaExternalSecretStores)
-		log.Info("Alpha feature enabled", "flag", features.EnableAlphaExternalSecretStores)
-
-		tcfg, err := certificates.LoadMTLSConfig(
-			filepath.Join(c.TLSClientCertsDir, initializer.SecretKeyCACert),
-			filepath.Join(c.TLSClientCertsDir, corev1.TLSCertKey),
-			filepath.Join(c.TLSClientCertsDir, corev1.TLSPrivateKeyKey),
-			false)
-		if err != nil {
-			return errors.Wrap(err, "cannot load TLS certificates for external secret stores")
-		}
-
-		o.ESSOptions = &controller.ESSOptions{
-			TLSConfig: tcfg,
-		}
 	}
 	if c.EnableRealtimeCompositions {
 		o.Features.Enable(features.EnableAlphaRealtimeCompositions)
