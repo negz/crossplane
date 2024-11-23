@@ -139,44 +139,6 @@ func TestValidateUpdate(t *testing.T) {
 			},
 			errs: field.ErrorList{field.Invalid(field.NewPath("spec", "names", "kind"), "a", "")},
 		},
-		"ClaimPluralChanged": {
-			args: args{
-				old: &CompositeResourceDefinition{
-					Spec: CompositeResourceDefinitionSpec{
-						ClaimNames: &extv1.CustomResourceDefinitionNames{
-							Plural: "b",
-						},
-					},
-				},
-				new: &CompositeResourceDefinition{
-					Spec: CompositeResourceDefinitionSpec{
-						ClaimNames: &extv1.CustomResourceDefinitionNames{
-							Plural: "a",
-						},
-					},
-				},
-			},
-			errs: field.ErrorList{field.Invalid(field.NewPath("spec", "claimNames", "plural"), "a", "")},
-		},
-		"ClaimKindChanged": {
-			args: args{
-				old: &CompositeResourceDefinition{
-					Spec: CompositeResourceDefinitionSpec{
-						ClaimNames: &extv1.CustomResourceDefinitionNames{
-							Kind: "b",
-						},
-					},
-				},
-				new: &CompositeResourceDefinition{
-					Spec: CompositeResourceDefinitionSpec{
-						ClaimNames: &extv1.CustomResourceDefinitionNames{
-							Kind: "a",
-						},
-					},
-				},
-			},
-			errs: field.ErrorList{field.Invalid(field.NewPath("spec", "claimNames", "kind"), "a", "")},
-		},
 	}
 
 	for name, tc := range cases {

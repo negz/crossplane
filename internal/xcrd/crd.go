@@ -36,18 +36,14 @@ import (
 	v1 "github.com/crossplane/crossplane/apis/apiextensions/v1"
 )
 
-// Category names for generated claim and composite CRDs.
+// Category names for generated composite CRDs.
 const (
-	CategoryClaim     = "claim"
 	CategoryComposite = "composite"
 )
 
 const (
 	errFmtGenCrd                   = "cannot generate CRD for %q %q"
 	errParseValidation             = "cannot parse validation schema"
-	errInvalidClaimNames           = "invalid resource claim names"
-	errMissingClaimNames           = "missing names"
-	errFmtConflictingClaimName     = "%q conflicts with composite resource name"
 	errCustomResourceValidationNil = "custom resource validation cannot be nil"
 )
 
@@ -87,57 +83,6 @@ func ForCompositeResource(xrd *v1.CompositeResourceDefinition) (*extv1.CustomRes
 			cup := props["compositionUpdatePolicy"]
 			cup.Default = &extv1.JSON{Raw: []byte(fmt.Sprintf("\"%s\"", *xrd.Spec.DefaultCompositionUpdatePolicy))}
 			props["compositionUpdatePolicy"] = cup
-		}
-		for k, v := range props {
-			crdv.Schema.OpenAPIV3Schema.Properties["spec"].Properties[k] = v
-		}
-		crd.Spec.Versions[i] = *crdv
-	}
-
-	return crd, nil
-}
-
-// ForCompositeResourceClaim derives the CustomResourceDefinition for a
-// composite resource claim from the supplied CompositeResourceDefinition.
-func ForCompositeResourceClaim(xrd *v1.CompositeResourceDefinition) (*extv1.CustomResourceDefinition, error) {
-	if err := validateClaimNames(xrd); err != nil {
-		return nil, errors.Wrap(err, errInvalidClaimNames)
-	}
-
-	crd := &extv1.CustomResourceDefinition{
-		Spec: extv1.CustomResourceDefinitionSpec{
-			Scope:      extv1.NamespaceScoped,
-			Group:      xrd.Spec.Group,
-			Names:      *xrd.Spec.ClaimNames,
-			Versions:   make([]extv1.CustomResourceDefinitionVersion, len(xrd.Spec.Versions)),
-			Conversion: xrd.Spec.Conversion,
-		},
-	}
-
-	crd.SetName(xrd.Spec.ClaimNames.Plural + "." + xrd.Spec.Group)
-	setCrdMetadata(crd, xrd)
-	crd.SetOwnerReferences([]metav1.OwnerReference{meta.AsController(
-		meta.TypedReferenceTo(xrd, v1.CompositeResourceDefinitionGroupVersionKind),
-	)})
-
-	crd.Spec.Names.Categories = append(crd.Spec.Names.Categories, CategoryClaim)
-
-	// 63 because the names are used as label values. We don't put 63-6
-	// (generateName suffix length) here because the name generator shortens
-	// the base to 57 automatically before appending the suffix.
-	const maxClaimNameLength = 63
-
-	for i, vr := range xrd.Spec.Versions {
-		crdv, err := genCrdVersion(vr, maxClaimNameLength)
-		if err != nil {
-			return nil, errors.Wrapf(err, errFmtGenCrd, "Composite Resource Claim", xrd.Name)
-		}
-		crdv.AdditionalPrinterColumns = append(crdv.AdditionalPrinterColumns, CompositeResourceClaimPrinterColumns()...)
-		props := CompositeResourceClaimSpecProps()
-		if xrd.Spec.DefaultCompositeDeletePolicy != nil {
-			cdp := props["compositeDeletePolicy"]
-			cdp.Default = &extv1.JSON{Raw: []byte(fmt.Sprintf("\"%s\"", *xrd.Spec.DefaultCompositeDeletePolicy))}
-			props["compositeDeletePolicy"] = cdp
 		}
 		for k, v := range props {
 			crdv.Schema.OpenAPIV3Schema.Properties["spec"].Properties[k] = v
@@ -211,30 +156,6 @@ func genCrdVersion(vr v1.CompositeResourceDefinitionVersion, maxNameLength int64
 	}
 	crdv.Schema.OpenAPIV3Schema.Properties["status"] = cStatus
 	return &crdv, nil
-}
-
-func validateClaimNames(d *v1.CompositeResourceDefinition) error {
-	if d.Spec.ClaimNames == nil {
-		return errors.New(errMissingClaimNames)
-	}
-
-	if n := d.Spec.ClaimNames.Kind; n == d.Spec.Names.Kind {
-		return errors.Errorf(errFmtConflictingClaimName, n)
-	}
-
-	if n := d.Spec.ClaimNames.Plural; n == d.Spec.Names.Plural {
-		return errors.Errorf(errFmtConflictingClaimName, n)
-	}
-
-	if n := d.Spec.ClaimNames.Singular; n != "" && n == d.Spec.Names.Singular {
-		return errors.Errorf(errFmtConflictingClaimName, n)
-	}
-
-	if n := d.Spec.ClaimNames.ListKind; n != "" && n == d.Spec.Names.ListKind {
-		return errors.Errorf(errFmtConflictingClaimName, n)
-	}
-
-	return nil
 }
 
 func parseSchema(v *v1.CompositeResourceValidation) (*extv1.JSONSchemaProps, error) {

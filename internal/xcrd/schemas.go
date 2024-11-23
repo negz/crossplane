@@ -24,16 +24,10 @@ import (
 // Label keys.
 const (
 	LabelKeyNamePrefixForComposed = "crossplane.io/composite"
-	LabelKeyClaimName             = "crossplane.io/claim-name"
-	LabelKeyClaimNamespace        = "crossplane.io/claim-namespace"
 )
 
 // CompositionRevisionRef should be propagated dynamically.
 const CompositionRevisionRef = "compositionRevisionRef"
-
-// PropagateSpecProps is the list of XRC spec properties to propagate
-// when translating an XRC into an XR.
-var PropagateSpecProps = []string{"compositionRef", "compositionSelector", "compositionUpdatePolicy", "compositionRevisionSelector"} //nolint:gochecknoglobals // We treat this as a constant.
 
 // TODO(negz): Add descriptions to schema fields.
 
@@ -194,122 +188,6 @@ func CompositeResourceSpecProps() map[string]extv1.JSONSchemaProps {
 	}
 }
 
-// CompositeResourceClaimSpecProps is a partial OpenAPIV3Schema for the spec
-// fields that Crossplane expects to be present for all published infrastructure
-// resources.
-func CompositeResourceClaimSpecProps() map[string]extv1.JSONSchemaProps {
-	return map[string]extv1.JSONSchemaProps{
-		"compositionRef": {
-			Type:     "object",
-			Required: []string{"name"},
-			Properties: map[string]extv1.JSONSchemaProps{
-				"name": {Type: "string"},
-			},
-		},
-		"compositionSelector": {
-			Type:     "object",
-			Required: []string{"matchLabels"},
-			Properties: map[string]extv1.JSONSchemaProps{
-				"matchLabels": {
-					Type: "object",
-					AdditionalProperties: &extv1.JSONSchemaPropsOrBool{
-						Allows: true,
-						Schema: &extv1.JSONSchemaProps{Type: "string"},
-					},
-				},
-			},
-		},
-		"compositionRevisionRef": {
-			Type:     "object",
-			Required: []string{"name"},
-			Properties: map[string]extv1.JSONSchemaProps{
-				"name": {Type: "string"},
-			},
-		},
-		"compositionRevisionSelector": {
-			Type:     "object",
-			Required: []string{"matchLabels"},
-			Properties: map[string]extv1.JSONSchemaProps{
-				"matchLabels": {
-					Type: "object",
-					AdditionalProperties: &extv1.JSONSchemaPropsOrBool{
-						Allows: true,
-						Schema: &extv1.JSONSchemaProps{Type: "string"},
-					},
-				},
-			},
-		},
-		"compositionUpdatePolicy": {
-			Type: "string",
-			Enum: []extv1.JSON{
-				{Raw: []byte(`"Automatic"`)},
-				{Raw: []byte(`"Manual"`)},
-			},
-		},
-		"compositeDeletePolicy": {
-			Type: "string",
-			Enum: []extv1.JSON{
-				{Raw: []byte(`"Background"`)},
-				{Raw: []byte(`"Foreground"`)},
-			},
-		},
-		"resourceRef": {
-			Type:     "object",
-			Required: []string{"apiVersion", "kind", "name"},
-			Properties: map[string]extv1.JSONSchemaProps{
-				"apiVersion": {Type: "string"},
-				"kind":       {Type: "string"},
-				"name":       {Type: "string"},
-			},
-		},
-		"publishConnectionDetailsTo": {
-			Type:     "object",
-			Required: []string{"name"},
-			Properties: map[string]extv1.JSONSchemaProps{
-				"name": {Type: "string"},
-				"configRef": {
-					Type:    "object",
-					Default: &extv1.JSON{Raw: []byte(`{"name": "default"}`)},
-					Properties: map[string]extv1.JSONSchemaProps{
-						"name": {
-							Type: "string",
-						},
-					},
-				},
-				"metadata": {
-					Type: "object",
-					Properties: map[string]extv1.JSONSchemaProps{
-						"labels": {
-							Type: "object",
-							AdditionalProperties: &extv1.JSONSchemaPropsOrBool{
-								Allows: true,
-								Schema: &extv1.JSONSchemaProps{Type: "string"},
-							},
-						},
-						"annotations": {
-							Type: "object",
-							AdditionalProperties: &extv1.JSONSchemaPropsOrBool{
-								Allows: true,
-								Schema: &extv1.JSONSchemaProps{Type: "string"},
-							},
-						},
-						"type": {
-							Type: "string",
-						},
-					},
-				},
-			},
-		},
-		"writeConnectionSecretToRef": {
-			Type:     "object",
-			Required: []string{"name"},
-			Properties: map[string]extv1.JSONSchemaProps{
-				"name": {Type: "string"},
-			},
-		},
-	}
-}
-
 // CompositeResourceStatusProps is a partial OpenAPIV3Schema for the status
 // fields that Crossplane expects to be present for all defined or published
 // infrastructure resources.
@@ -372,33 +250,6 @@ func CompositeResourcePrinterColumns() []extv1.CustomResourceColumnDefinition {
 			Name:     "COMPOSITION",
 			Type:     "string",
 			JSONPath: ".spec.compositionRef.name",
-		},
-		{
-			Name:     "AGE",
-			Type:     "date",
-			JSONPath: ".metadata.creationTimestamp",
-		},
-	}
-}
-
-// CompositeResourceClaimPrinterColumns returns the set of default printer
-// columns that should exist in all generated composite resource claim CRDs.
-func CompositeResourceClaimPrinterColumns() []extv1.CustomResourceColumnDefinition {
-	return []extv1.CustomResourceColumnDefinition{
-		{
-			Name:     "SYNCED",
-			Type:     "string",
-			JSONPath: ".status.conditions[?(@.type=='Synced')].status",
-		},
-		{
-			Name:     "READY",
-			Type:     "string",
-			JSONPath: ".status.conditions[?(@.type=='Ready')].status",
-		},
-		{
-			Name:     "CONNECTION-SECRET",
-			Type:     "string",
-			JSONPath: ".spec.writeConnectionSecretToRef.name",
 		},
 		{
 			Name:     "AGE",

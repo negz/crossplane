@@ -3,7 +3,6 @@ module github.com/crossplane/crossplane
 go 1.22.8
 
 require (
-	dario.cat/mergo v1.0.1
 	github.com/AdaLogics/go-fuzz-headers v0.0.0-20230811130428-ced1acdcaa24
 	github.com/Masterminds/semver v1.5.0
 	github.com/alecthomas/kong v0.9.0
@@ -48,6 +47,7 @@ require (
 
 require (
 	cuelang.org/go v0.8.2 // indirect
+	dario.cat/mergo v1.0.1 // indirect
 	github.com/MakeNowJust/heredoc v1.0.0 // indirect
 	github.com/ProtonMail/go-crypto v1.0.0 // indirect
 	github.com/antlr4-go/antlr/v4 v4.13.0 // indirect

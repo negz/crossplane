@@ -168,7 +168,7 @@ func resolveMathClamp(t v1.MathTransform, input any) (any, error) {
 		// should never happen as we validate the input type in ResolveMath
 		return nil, errors.Errorf(errFmtMathInputNonNumber, input)
 	}
-	switch t.GetType() { //nolint:exhaustive // We validate the type in ResolveMath
+	switch t.GetType() { 
 	case v1.MathTransformTypeClampMin:
 		if in < *t.ClampMin {
 			return *t.ClampMin, nil

@@ -122,15 +122,6 @@ func (m *Manager) PrepExtensions(extensions []*unstructured.Unstructured) error 
 			}
 			m.crds = append(m.crds, crd)
 
-			if xrd.Spec.ClaimNames != nil {
-				claimCrd, err := xcrd.ForCompositeResourceClaim(xrd)
-				if err != nil {
-					return errors.Wrapf(err, "cannot derive claim CRD from XRD %q", xrd.GetName())
-				}
-
-				m.crds = append(m.crds, claimCrd)
-			}
-
 		case schema.GroupKind{Group: "pkg.crossplane.io", Kind: "Provider"}:
 			paved := fieldpath.Pave(e.Object)
 			image, err := paved.GetString("spec.package")

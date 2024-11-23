@@ -26,7 +26,6 @@ import (
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/apimachinery/pkg/util/validation/field"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
@@ -59,284 +58,6 @@ func TestValidateUpdate(t *testing.T) {
 			},
 			err: errors.New(errUnexpectedType),
 		},
-		"SuccessNoClaimCreate": {
-			args: args{
-				old: &v1.CompositeResourceDefinition{
-					Spec: v1.CompositeResourceDefinitionSpec{
-						Names: extv1.CustomResourceDefinitionNames{
-							Kind: "a",
-						},
-					},
-				},
-				new: &v1.CompositeResourceDefinition{
-					Spec: v1.CompositeResourceDefinitionSpec{
-						Names: extv1.CustomResourceDefinitionNames{
-							Kind: "a",
-						},
-					},
-				},
-				client: &test.MockClient{
-					MockGet:    test.NewMockGetFn(kerrors.NewNotFound(schema.GroupResource{}, "")),
-					MockCreate: test.NewMockCreateFn(nil),
-				},
-			},
-		},
-		"SuccessWithClaimCreate": {
-			args: args{
-				old: &v1.CompositeResourceDefinition{
-					Spec: v1.CompositeResourceDefinitionSpec{
-						Names: extv1.CustomResourceDefinitionNames{
-							Kind:     "A",
-							Plural:   "as",
-							Singular: "a",
-							ListKind: "AList",
-						},
-						ClaimNames: &extv1.CustomResourceDefinitionNames{
-							Kind:     "B",
-							Plural:   "bs",
-							Singular: "b",
-							ListKind: "BList",
-						},
-					},
-				},
-				new: &v1.CompositeResourceDefinition{
-					Spec: v1.CompositeResourceDefinitionSpec{
-						Names: extv1.CustomResourceDefinitionNames{
-							Kind:     "A",
-							Plural:   "as",
-							Singular: "a",
-							ListKind: "AList",
-						},
-						ClaimNames: &extv1.CustomResourceDefinitionNames{
-							Kind:     "B",
-							Plural:   "bs",
-							Singular: "b",
-							ListKind: "BList",
-						},
-					},
-				},
-				client: &test.MockClient{
-					MockGet:    test.NewMockGetFn(kerrors.NewNotFound(schema.GroupResource{}, "")),
-					MockCreate: test.NewMockCreateFn(nil),
-				},
-			},
-		},
-
-		"SuccessNoClaimUpdate": {
-			args: args{
-				old: &v1.CompositeResourceDefinition{
-					Spec: v1.CompositeResourceDefinitionSpec{
-						Names: extv1.CustomResourceDefinitionNames{
-							Kind: "a",
-						},
-					},
-				},
-				new: &v1.CompositeResourceDefinition{
-					Spec: v1.CompositeResourceDefinitionSpec{
-						Names: extv1.CustomResourceDefinitionNames{
-							Kind: "a",
-						},
-					},
-				},
-				client: &test.MockClient{
-					MockGet:    test.NewMockGetFn(nil),
-					MockUpdate: test.NewMockUpdateFn(nil),
-				},
-			},
-		},
-		"SuccessWithClaimUpdate": {
-			args: args{
-				old: &v1.CompositeResourceDefinition{
-					Spec: v1.CompositeResourceDefinitionSpec{
-						Names: extv1.CustomResourceDefinitionNames{
-							Kind:     "A",
-							Plural:   "as",
-							Singular: "a",
-							ListKind: "AList",
-						},
-						ClaimNames: &extv1.CustomResourceDefinitionNames{
-							Kind:     "B",
-							Plural:   "bs",
-							Singular: "b",
-							ListKind: "BList",
-						},
-					},
-				},
-				new: &v1.CompositeResourceDefinition{
-					Spec: v1.CompositeResourceDefinitionSpec{
-						Names: extv1.CustomResourceDefinitionNames{
-							Kind:     "A",
-							Plural:   "as",
-							Singular: "a",
-							ListKind: "AList",
-						},
-						ClaimNames: &extv1.CustomResourceDefinitionNames{
-							Kind:     "B",
-							Plural:   "bs",
-							Singular: "b",
-							ListKind: "BList",
-						},
-					},
-				},
-				client: &test.MockClient{
-					MockGet:    test.NewMockGetFn(nil),
-					MockUpdate: test.NewMockUpdateFn(nil),
-				},
-			},
-		},
-		"FailChangeClaimKind": {
-			args: args{
-				old: &v1.CompositeResourceDefinition{
-					Spec: v1.CompositeResourceDefinitionSpec{
-						Names: extv1.CustomResourceDefinitionNames{
-							Kind:     "A",
-							Plural:   "as",
-							Singular: "a",
-							ListKind: "AList",
-						},
-						ClaimNames: &extv1.CustomResourceDefinitionNames{
-							Kind:     "B",
-							Plural:   "bs",
-							Singular: "b",
-							ListKind: "BList",
-						},
-					},
-				},
-				new: &v1.CompositeResourceDefinition{
-					Spec: v1.CompositeResourceDefinitionSpec{
-						Names: extv1.CustomResourceDefinitionNames{
-							Kind:     "A",
-							Plural:   "as",
-							Singular: "a",
-							ListKind: "AList",
-						},
-						ClaimNames: &extv1.CustomResourceDefinitionNames{
-							Kind:     "C",
-							Plural:   "cs",
-							Singular: "c",
-							ListKind: "CList",
-						},
-					},
-				},
-				client: &test.MockClient{
-					MockGet:    test.NewMockGetFn(nil),
-					MockUpdate: test.NewMockUpdateFn(nil),
-				},
-			},
-			// WARN: brittle test, depends on the sorting of the field.ErrorList
-			err: field.ErrorList{
-				field.Invalid(field.NewPath("spec", "claimNames", "plural"), "cs", "field is immutable"),
-				field.Invalid(field.NewPath("spec", "claimNames", "kind"), "C", "field is immutable"),
-			}.ToAggregate(),
-		},
-		"FailOnClaimNotFound": {
-			args: args{
-				old: &v1.CompositeResourceDefinition{
-					Spec: v1.CompositeResourceDefinitionSpec{
-						Names: extv1.CustomResourceDefinitionNames{
-							Kind:     "A",
-							Plural:   "as",
-							Singular: "a",
-							ListKind: "AList",
-						},
-						ClaimNames: &extv1.CustomResourceDefinitionNames{
-							Kind:     "B",
-							Plural:   "bs",
-							Singular: "b",
-							ListKind: "BList",
-						},
-					},
-				},
-				new: &v1.CompositeResourceDefinition{
-					Spec: v1.CompositeResourceDefinitionSpec{
-						Names: extv1.CustomResourceDefinitionNames{
-							Kind:     "A",
-							Plural:   "as",
-							Singular: "a",
-							ListKind: "AList",
-						},
-						ClaimNames: &extv1.CustomResourceDefinitionNames{
-							Kind:     "B",
-							Plural:   "bs",
-							Singular: "b",
-							ListKind: "BList",
-						},
-					},
-				},
-				client: &test.MockClient{
-					MockGet: test.NewMockGetFn(kerrors.NewNotFound(schema.GroupResource{}, "")),
-					MockCreate: test.NewMockCreateFn(nil, func(obj client.Object) error {
-						p, err := fieldpath.PaveObject(obj)
-						if err != nil {
-							return err
-						}
-						s, err := p.GetString("spec.names.kind")
-						if err != nil {
-							return err
-						}
-						if s == "B" {
-							return errBoom
-						}
-						return nil
-					}),
-				},
-			},
-			err: errBoom,
-		},
-		"FailOnClaimFound": {
-			args: args{
-				old: &v1.CompositeResourceDefinition{
-					Spec: v1.CompositeResourceDefinitionSpec{
-						Names: extv1.CustomResourceDefinitionNames{
-							Kind:     "A",
-							Plural:   "as",
-							Singular: "a",
-							ListKind: "AList",
-						},
-						ClaimNames: &extv1.CustomResourceDefinitionNames{
-							Kind:     "B",
-							Plural:   "bs",
-							Singular: "b",
-							ListKind: "BList",
-						},
-					},
-				},
-				new: &v1.CompositeResourceDefinition{
-					Spec: v1.CompositeResourceDefinitionSpec{
-						Names: extv1.CustomResourceDefinitionNames{
-							Kind:     "A",
-							Plural:   "as",
-							Singular: "a",
-							ListKind: "AList",
-						},
-						ClaimNames: &extv1.CustomResourceDefinitionNames{
-							Kind:     "B",
-							Plural:   "bs",
-							Singular: "b",
-							ListKind: "BList",
-						},
-					},
-				},
-				client: &test.MockClient{
-					MockGet: test.NewMockGetFn(nil),
-					MockUpdate: test.NewMockUpdateFn(nil, func(obj client.Object) error {
-						p, err := fieldpath.PaveObject(obj)
-						if err != nil {
-							return err
-						}
-						s, err := p.GetString("spec.names.kind")
-						if err != nil {
-							return err
-						}
-						if s == "B" {
-							return errBoom
-						}
-						return nil
-					}),
-				},
-			},
-			err: errBoom,
-		},
 		"FailOnCompositeNotFound": {
 			args: args{
 				old: &v1.CompositeResourceDefinition{
@@ -347,12 +68,6 @@ func TestValidateUpdate(t *testing.T) {
 							Singular: "a",
 							ListKind: "AList",
 						},
-						ClaimNames: &extv1.CustomResourceDefinitionNames{
-							Kind:     "B",
-							Plural:   "bs",
-							Singular: "b",
-							ListKind: "BList",
-						},
 					},
 				},
 				new: &v1.CompositeResourceDefinition{
@@ -362,12 +77,6 @@ func TestValidateUpdate(t *testing.T) {
 							Plural:   "as",
 							Singular: "a",
 							ListKind: "AList",
-						},
-						ClaimNames: &extv1.CustomResourceDefinitionNames{
-							Kind:     "B",
-							Plural:   "bs",
-							Singular: "b",
-							ListKind: "BList",
 						},
 					},
 				},
@@ -401,12 +110,6 @@ func TestValidateUpdate(t *testing.T) {
 							Singular: "a",
 							ListKind: "AList",
 						},
-						ClaimNames: &extv1.CustomResourceDefinitionNames{
-							Kind:     "B",
-							Plural:   "bs",
-							Singular: "b",
-							ListKind: "BList",
-						},
 					},
 				},
 				new: &v1.CompositeResourceDefinition{
@@ -416,12 +119,6 @@ func TestValidateUpdate(t *testing.T) {
 							Plural:   "as",
 							Singular: "a",
 							ListKind: "AList",
-						},
-						ClaimNames: &extv1.CustomResourceDefinitionNames{
-							Kind:     "B",
-							Plural:   "bs",
-							Singular: "b",
-							ListKind: "BList",
 						},
 					},
 				},
@@ -501,12 +198,6 @@ func TestValidateCreate(t *testing.T) {
 							Singular: "a",
 							ListKind: "AList",
 						},
-						ClaimNames: &extv1.CustomResourceDefinitionNames{
-							Kind:     "B",
-							Plural:   "bs",
-							Singular: "b",
-							ListKind: "BList",
-						},
 					},
 				},
 				client: &test.MockClient{
@@ -514,44 +205,6 @@ func TestValidateCreate(t *testing.T) {
 					MockCreate: test.NewMockCreateFn(nil),
 				},
 			},
-		},
-		"FailOnClaim": {
-			args: args{
-				obj: &v1.CompositeResourceDefinition{
-					Spec: v1.CompositeResourceDefinitionSpec{
-						Names: extv1.CustomResourceDefinitionNames{
-							Kind:     "A",
-							Plural:   "as",
-							Singular: "a",
-							ListKind: "AList",
-						},
-						ClaimNames: &extv1.CustomResourceDefinitionNames{
-							Kind:     "B",
-							Plural:   "bs",
-							Singular: "b",
-							ListKind: "BList",
-						},
-					},
-				},
-				client: &test.MockClient{
-					MockGet: test.NewMockGetFn(kerrors.NewNotFound(schema.GroupResource{}, "")),
-					MockCreate: test.NewMockCreateFn(nil, func(obj client.Object) error {
-						p, err := fieldpath.PaveObject(obj)
-						if err != nil {
-							return err
-						}
-						s, err := p.GetString("spec.names.kind")
-						if err != nil {
-							return err
-						}
-						if s == "B" {
-							return errBoom
-						}
-						return nil
-					}),
-				},
-			},
-			err: errBoom,
 		},
 		"FailOnComposite": {
 			args: args{
@@ -562,12 +215,6 @@ func TestValidateCreate(t *testing.T) {
 							Plural:   "as",
 							Singular: "a",
 							ListKind: "AList",
-						},
-						ClaimNames: &extv1.CustomResourceDefinitionNames{
-							Kind:     "B",
-							Plural:   "bs",
-							Singular: "b",
-							ListKind: "BList",
 						},
 					},
 				},

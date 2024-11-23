@@ -57,24 +57,6 @@ type validator struct {
 	client client.Client
 }
 
-func getAllCRDsForXRD(in *v1.CompositeResourceDefinition) (out []*apiextv1.CustomResourceDefinition, err error) {
-	crd, err := xcrd.ForCompositeResource(in)
-	if err != nil {
-		return out, xperrors.Wrap(err, "cannot get CRD for Composite Resource")
-	}
-	out = append(out, crd)
-	// if claim enabled, validate claim CRD
-	if in.Spec.ClaimNames == nil {
-		return out, nil
-	}
-	crdClaim, err := xcrd.ForCompositeResourceClaim(in)
-	if err != nil {
-		return out, xperrors.Wrap(err, "cannot get Claim CRD for Composite Claim")
-	}
-	out = append(out, crdClaim)
-	return out, nil
-}
-
 // ValidateCreate validates a Composition.
 func (v *validator) ValidateCreate(ctx context.Context, obj runtime.Object) (warns admission.Warnings, err error) {
 	in, ok := obj.(*v1.CompositeResourceDefinition)
@@ -86,19 +68,14 @@ func (v *validator) ValidateCreate(ctx context.Context, obj runtime.Object) (war
 	if validationErr != nil {
 		return validationWarns, validationErr.ToAggregate()
 	}
-	crds, err := getAllCRDsForXRD(in)
+	crd, err := xcrd.ForCompositeResource(in)
 	if err != nil {
 		return warns, xperrors.Wrap(err, "cannot get CRDs for CompositeResourceDefinition")
 	}
-	for _, crd := range crds {
-		// Can't use validation.ValidateCustomResourceDefinition because it leads to dependency errors,
-		// see https://github.com/kubernetes/apiextensions-apiserver/issues/59
-		// if errs := validation.ValidateCustomResourceDefinition(ctx, crd); len(errs) != 0 {
-		//	return warns, errors.Wrap(errs.ToAggregate(), "invalid CRD generated for CompositeResourceDefinition")
-		//}
-		if err := v.client.Create(ctx, crd, client.DryRunAll); err != nil {
-			return warns, v.rewriteError(err, in, crd)
-		}
+	// Can't use validation.ValidateCustomResourceDefinition because it leads to dependency errors,
+	// see https://github.com/kubernetes/apiextensions-apiserver/issues/59
+	if err := v.client.Create(ctx, crd, client.DryRunAll); err != nil {
+		return warns, v.rewriteError(err, in, crd)
 	}
 
 	return warns, nil
@@ -121,25 +98,19 @@ func (v *validator) ValidateUpdate(ctx context.Context, oldObj, newObj runtime.O
 	if validationErr != nil {
 		return validationWarns, validationErr.ToAggregate()
 	}
-	crds, err := getAllCRDsForXRD(newXRD)
+	crd, err := xcrd.ForCompositeResource(newXRD)
 	if err != nil {
 		return warns, xperrors.Wrap(err, "cannot get CRDs for CompositeResourceDefinition")
 	}
-	for _, crd := range crds {
-		// Can't use validation.ValidateCustomResourceDefinition because it leads to dependency errors,
-		// see https://github.com/kubernetes/apiextensions-apiserver/issues/59
-		// if errs := validation.ValidateCustomResourceDefinition(ctx, crd); len(errs) != 0 {
-		//	return warns, errors.Wrap(errs.ToAggregate(), "invalid CRD generated for CompositeResourceDefinition")
-		//}
-		//
-		// We need to be able to handle both cases:
-		// 1. both CRDs exists already, which should be most of the time
-		// 2. Claim's CRD does not exist yet, e.g. the user updated the XRD spec
-		// which previously did not specify a claim.
-		err := v.dryRunUpdateOrCreateIfNotFound(ctx, crd)
-		if err != nil {
-			return warns, v.rewriteError(err, newXRD, crd)
-		}
+	// Can't use validation.ValidateCustomResourceDefinition because it leads to dependency errors,
+	// see https://github.com/kubernetes/apiextensions-apiserver/issues/59
+	//
+	// We need to be able to handle both cases:
+	// 1. both CRDs exists already, which should be most of the time
+	// 2. Claim's CRD does not exist yet, e.g. the user updated the XRD spec
+	// which previously did not specify a claim.
+	if err := v.dryRunUpdateOrCreateIfNotFound(ctx, crd); err != nil {
+		return warns, v.rewriteError(err, newXRD, crd)
 	}
 
 	return warns, nil

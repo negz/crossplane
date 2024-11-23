@@ -38,29 +38,11 @@ type CompositeResourceDefinitionSpec struct {
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="Value is immutable"
 	Names extv1.CustomResourceDefinitionNames `json:"names"`
 
-	// ClaimNames specifies the names of an optional composite resource claim.
-	// When claim names are specified Crossplane will create a namespaced
-	// 'composite resource claim' CRD that corresponds to the defined composite
-	// resource. This composite resource claim acts as a namespaced proxy for
-	// the composite resource; creating, updating, or deleting the claim will
-	// create, update, or delete a corresponding composite resource. You may add
-	// claim names to an existing CompositeResourceDefinition, but they cannot
-	// be changed or removed once they have been set.
-	// +optional
-	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="Value is immutable"
-	ClaimNames *extv1.CustomResourceDefinitionNames `json:"claimNames,omitempty"`
-
 	// ConnectionSecretKeys is the list of keys that will be exposed to the end
 	// user of the defined kind.
 	// If the list is empty, all keys will be published.
 	// +optional
 	ConnectionSecretKeys []string `json:"connectionSecretKeys,omitempty"`
-
-	// DefaultCompositeDeletePolicy is the policy used when deleting the Composite
-	// that is associated with the Claim if no policy has been specified.
-	// +optional
-	// +kubebuilder:default=Background
-	DefaultCompositeDeletePolicy *xpv1.CompositeDeletePolicy `json:"defaultCompositeDeletePolicy,omitempty"`
 
 	// DefaultCompositionRef refers to the Composition resource that will be used
 	// in case no composition selector is given.
@@ -96,7 +78,7 @@ type CompositeResourceDefinitionSpec struct {
 	// +optional
 	Conversion *extv1.CustomResourceConversion `json:"conversion,omitempty"`
 
-	// Metadata specifies the desired metadata for the defined composite resource and claim CRD's.
+	// Metadata specifies the desired metadata for the defined composite resource and CRD's.
 	// +optional
 	Metadata *CompositeResourceDefinitionSpecMetadata `json:"metadata,omitempty"`
 }
@@ -198,13 +180,6 @@ type CompositeResourceDefinitionControllerStatus struct {
 	// Note that clients may interact with any served type; this is simply the
 	// type that Crossplane interacts with.
 	CompositeResourceTypeRef TypeReference `json:"compositeResourceType,omitempty"`
-
-	// The CompositeResourceClaimTypeRef is the type of composite resource claim
-	// that Crossplane is currently reconciling for this definition. Its version
-	// will eventually become consistent with the definition's referenceable
-	// version. Note that clients may interact with any served type; this is
-	// simply the type that Crossplane interacts with.
-	CompositeResourceClaimTypeRef TypeReference `json:"compositeResourceClaimType,omitempty"`
 }
 
 // +kubebuilder:object:root=true
@@ -250,31 +225,6 @@ func (c *CompositeResourceDefinition) GetCompositeGroupVersionKind() schema.Grou
 	}
 
 	return schema.GroupVersionKind{Group: c.Spec.Group, Version: v, Kind: c.Spec.Names.Kind}
-}
-
-// OffersClaim is true when a CompositeResourceDefinition offers a claim for the
-// composite resource it defines.
-func (c *CompositeResourceDefinition) OffersClaim() bool {
-	return c.Spec.ClaimNames != nil
-}
-
-// GetClaimGroupVersionKind returns the schema.GroupVersionKind of the CRD for
-// the composite resource claim this CompositeResourceDefinition defines. An
-// empty GroupVersionKind is returned if the CompositeResourceDefinition does
-// not offer a claim.
-func (c *CompositeResourceDefinition) GetClaimGroupVersionKind() schema.GroupVersionKind {
-	if !c.OffersClaim() {
-		return schema.GroupVersionKind{}
-	}
-
-	v := ""
-	for _, vr := range c.Spec.Versions {
-		if vr.Referenceable {
-			v = vr.Name
-		}
-	}
-
-	return schema.GroupVersionKind{Group: c.Spec.Group, Version: v, Kind: c.Spec.ClaimNames.Kind}
 }
 
 // GetConnectionSecretKeys returns the set of allowed keys to filter the connection

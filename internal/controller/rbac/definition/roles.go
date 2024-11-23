@@ -163,47 +163,6 @@ func RenderClusterRoles(d *v1.CompositeResourceDefinition) []rbacv1.ClusterRole 
 		},
 	}
 
-	if d.Spec.ClaimNames != nil {
-		system.Rules = append(system.Rules, rbacv1.PolicyRule{
-			APIGroups: []string{d.Spec.Group},
-			Resources: []string{
-				d.Spec.ClaimNames.Plural,
-				d.Spec.ClaimNames.Plural + suffixStatus,
-			},
-			Verbs: verbsEdit,
-		},
-			rbacv1.PolicyRule{
-				// Crossplane needs permission to set finalizers on Claims in order to create resources
-				// that block their deletion when the OwnerReferencesPermissionEnforcement admission controller is enabled.
-				APIGroups: []string{d.Spec.Group},
-				Resources: []string{
-					d.Spec.ClaimNames.Plural + suffixFinalizers,
-				},
-				Verbs: verbsUpdate,
-			},
-		)
-
-		edit.Rules = append(edit.Rules, rbacv1.PolicyRule{
-			APIGroups: []string{d.Spec.Group},
-			Resources: []string{
-				d.Spec.ClaimNames.Plural,
-				d.Spec.ClaimNames.Plural + suffixStatus,
-			},
-			Verbs: verbsEdit,
-		})
-
-		view.Rules = append(view.Rules, rbacv1.PolicyRule{
-			APIGroups: []string{d.Spec.Group},
-			Resources: []string{
-				d.Spec.ClaimNames.Plural,
-				d.Spec.ClaimNames.Plural + suffixStatus,
-			},
-			Verbs: verbsView,
-		})
-
-		// The browse role only includes composite resources; not claims.
-	}
-
 	for _, o := range []metav1.Object{system, edit, view, browse} {
 		meta.AddOwnerReference(o, meta.AsController(meta.TypedReferenceTo(d, v1.CompositeResourceDefinitionGroupVersionKind)))
 	}

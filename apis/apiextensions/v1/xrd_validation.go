@@ -41,14 +41,6 @@ func (c *CompositeResourceDefinition) ValidateUpdate(old *CompositeResourceDefin
 	if c.Spec.Names.Kind != old.Spec.Names.Kind {
 		errs = append(errs, field.Invalid(field.NewPath("spec", "names", "kind"), c.Spec.Names.Kind, "field is immutable"))
 	}
-	if c.Spec.ClaimNames != nil && old.Spec.ClaimNames != nil {
-		if c.Spec.ClaimNames.Plural != old.Spec.ClaimNames.Plural {
-			errs = append(errs, field.Invalid(field.NewPath("spec", "claimNames", "plural"), c.Spec.ClaimNames.Plural, "field is immutable"))
-		}
-		if c.Spec.ClaimNames.Kind != old.Spec.ClaimNames.Kind {
-			errs = append(errs, field.Invalid(field.NewPath("spec", "claimNames", "kind"), c.Spec.ClaimNames.Kind, "field is immutable"))
-		}
-	}
 	warns, newErr := c.Validate()
 	errs = append(errs, newErr...)
 	return warns, errs

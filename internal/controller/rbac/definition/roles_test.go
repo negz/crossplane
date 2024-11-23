@@ -31,7 +31,6 @@ import (
 func TestRenderClusterRoles(t *testing.T) {
 	group := "example.org"
 	pluralXR := "coolcomposites"
-	pluralXRC := "coolclaims"
 	name := pluralXR + "." + group
 	uid := types.UID("no-you-id")
 
@@ -50,8 +49,8 @@ func TestRenderClusterRoles(t *testing.T) {
 		d      *v1.CompositeResourceDefinition
 		want   []rbacv1.ClusterRole
 	}{
-		"DoesNotOfferClaim": {
-			reason: "An XRD that does not offer a claim should produce ClusterRoles that grant access to only the composite",
+		"GrantComposite": {
+			reason: "An XRD should produce ClusterRoles that grant access to the composite",
 			d: &v1.CompositeResourceDefinition{
 				ObjectMeta: metav1.ObjectMeta{Name: name, UID: uid},
 				Spec: v1.CompositeResourceDefinitionSpec{
@@ -120,116 +119,6 @@ func TestRenderClusterRoles(t *testing.T) {
 					},
 				},
 				{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:            namePrefix + name + nameSuffixBrowse,
-						OwnerReferences: []metav1.OwnerReference{owner},
-						Labels: map[string]string{
-							keyAggregateToBrowse: valTrue,
-							keyXRD:               name,
-						},
-					},
-					Rules: []rbacv1.PolicyRule{
-						{
-							APIGroups: []string{group},
-							Resources: []string{pluralXR, pluralXR + suffixStatus},
-							Verbs:     verbsBrowse,
-						},
-					},
-				},
-			},
-		},
-		"OffersClaim": {
-			reason: "An XRD that offers a claim should produce ClusterRoles that grant access to that claim",
-			d: &v1.CompositeResourceDefinition{
-				ObjectMeta: metav1.ObjectMeta{Name: name, UID: uid},
-				Spec: v1.CompositeResourceDefinitionSpec{
-					Group:      group,
-					Names:      extv1.CustomResourceDefinitionNames{Plural: pluralXR},
-					ClaimNames: &extv1.CustomResourceDefinitionNames{Plural: pluralXRC},
-				},
-			},
-			want: []rbacv1.ClusterRole{
-				{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:            namePrefix + name + nameSuffixSystem,
-						OwnerReferences: []metav1.OwnerReference{owner},
-						Labels: map[string]string{
-							keyAggregateToSystem: valTrue,
-						},
-					},
-					Rules: []rbacv1.PolicyRule{
-						{
-							APIGroups: []string{group},
-							Resources: []string{pluralXR, pluralXR + suffixStatus},
-							Verbs:     verbsEdit,
-						},
-						{
-							APIGroups: []string{group},
-							Resources: []string{pluralXR + suffixFinalizers},
-							Verbs:     verbsUpdate,
-						},
-						{
-							APIGroups: []string{group},
-							Resources: []string{pluralXRC, pluralXRC + suffixStatus},
-							Verbs:     verbsEdit,
-						},
-						{
-							APIGroups: []string{group},
-							Resources: []string{pluralXRC + suffixFinalizers},
-							Verbs:     verbsUpdate,
-						},
-					},
-				},
-				{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:            namePrefix + name + nameSuffixEdit,
-						OwnerReferences: []metav1.OwnerReference{owner},
-						Labels: map[string]string{
-							keyAggregateToAdmin:   valTrue,
-							keyAggregateToNSAdmin: valTrue,
-							keyAggregateToEdit:    valTrue,
-							keyAggregateToNSEdit:  valTrue,
-							keyXRD:                name,
-						},
-					},
-					Rules: []rbacv1.PolicyRule{
-						{
-							APIGroups: []string{group},
-							Resources: []string{pluralXR, pluralXR + suffixStatus},
-							Verbs:     verbsEdit,
-						},
-						{
-							APIGroups: []string{group},
-							Resources: []string{pluralXRC, pluralXRC + suffixStatus},
-							Verbs:     verbsEdit,
-						},
-					},
-				},
-				{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:            namePrefix + name + nameSuffixView,
-						OwnerReferences: []metav1.OwnerReference{owner},
-						Labels: map[string]string{
-							keyAggregateToView:   valTrue,
-							keyAggregateToNSView: valTrue,
-							keyXRD:               name,
-						},
-					},
-					Rules: []rbacv1.PolicyRule{
-						{
-							APIGroups: []string{group},
-							Resources: []string{pluralXR, pluralXR + suffixStatus},
-							Verbs:     verbsView,
-						},
-						{
-							APIGroups: []string{group},
-							Resources: []string{pluralXRC, pluralXRC + suffixStatus},
-							Verbs:     verbsView,
-						},
-					},
-				},
-				{
-					// The browse role never includes claims.
 					ObjectMeta: metav1.ObjectMeta{
 						Name:            namePrefix + name + nameSuffixBrowse,
 						OwnerReferences: []metav1.OwnerReference{owner},

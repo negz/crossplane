@@ -60,62 +60,6 @@ spec:
             description: CompositeResourceDefinitionSpec specifies the desired state
               of the definition.
             properties:
-              claimNames:
-                description: |-
-                  ClaimNames specifies the names of an optional composite resource claim.
-                  When claim names are specified Crossplane will create a namespaced
-                  'composite resource claim' CRD that corresponds to the defined composite
-                  resource. This composite resource claim acts as a namespaced proxy for
-                  the composite resource; creating, updating, or deleting the claim will
-                  create, update, or delete a corresponding composite resource. You may add
-                  claim names to an existing CompositeResourceDefinition, but they cannot
-                  be changed or removed once they have been set.
-                properties:
-                  categories:
-                    description: |-
-                      categories is a list of grouped resources this custom resource belongs to (e.g. 'all').
-                      This is published in API discovery documents, and used by clients to support invocations like
-                      `kubectl get all`.
-                    items:
-                      type: string
-                    type: array
-                    x-kubernetes-list-type: atomic
-                  kind:
-                    description: |-
-                      kind is the serialized kind of the resource. It is normally CamelCase and singular.
-                      Custom resource instances will use this value as the `kind` attribute in API calls.
-                    type: string
-                  listKind:
-                    description: listKind is the serialized kind of the list for this
-                      resource. Defaults to "`kind`List".
-                    type: string
-                  plural:
-                    description: |-
-                      plural is the plural name of the resource to serve.
-                      The custom resources are served under `/apis/<group>/<version>/.../<plural>`.
-                      Must match the name of the CustomResourceDefinition (in the form `<names.plural>.<group>`).
-                      Must be all lowercase.
-                    type: string
-                  shortNames:
-                    description: |-
-                      shortNames are short names for the resource, exposed in API discovery documents,
-                      and used by clients to support invocations like `kubectl get <shortname>`.
-                      It must be all lowercase.
-                    items:
-                      type: string
-                    type: array
-                    x-kubernetes-list-type: atomic
-                  singular:
-                    description: singular is the singular name of the resource. It
-                      must be all lowercase. Defaults to lowercased `kind`.
-                    type: string
-                required:
-                - kind
-                - plural
-                type: object
-                x-kubernetes-validations:
-                - message: Value is immutable
-                  rule: self == oldSelf
               connectionSecretKeys:
                 description: |-
                   ConnectionSecretKeys is the list of keys that will be exposed to the end
@@ -228,15 +172,6 @@ spec:
                 required:
                 - strategy
                 type: object
-              defaultCompositeDeletePolicy:
-                default: Background
-                description: |-
-                  DefaultCompositeDeletePolicy is the policy used when deleting the Composite
-                  that is associated with the Claim if no policy has been specified.
-                enum:
-                - Background
-                - Foreground
-                type: string
               defaultCompositionRef:
                 description: |-
                   DefaultCompositionRef refers to the Composition resource that will be used
@@ -282,7 +217,7 @@ spec:
                   rule: self == oldSelf
               metadata:
                 description: Metadata specifies the desired metadata for the defined
-                  composite resource and claim CRD's.
+                  composite resource and CRD's.
                 properties:
                   annotations:
                     additionalProperties:
@@ -529,24 +464,6 @@ spec:
                   Controllers represents the status of the controllers that power this
                   composite resource definition.
                 properties:
-                  compositeResourceClaimType:
-                    description: |-
-                      The CompositeResourceClaimTypeRef is the type of composite resource claim
-                      that Crossplane is currently reconciling for this definition. Its version
-                      will eventually become consistent with the definition's referenceable
-                      version. Note that clients may interact with any served type; this is
-                      simply the type that Crossplane interacts with.
-                    properties:
-                      apiVersion:
-                        description: APIVersion of the type.
-                        type: string
-                      kind:
-                        description: Kind of the type.
-                        type: string
-                    required:
-                    - apiVersion
-                    - kind
-                    type: object
                   compositeResourceType:
                     description: |-
                       The CompositeResourceTypeRef is the type of composite resource that
