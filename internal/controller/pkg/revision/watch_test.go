@@ -32,7 +32,7 @@ import (
 	"github.com/crossplane/crossplane-runtime/pkg/test"
 
 	v1 "github.com/crossplane/crossplane/apis/pkg/v1"
-	"github.com/crossplane/crossplane/apis/pkg/v1alpha1"
+	"github.com/crossplane/crossplane/apis/pkg/v1beta1"
 )
 
 var _ handler.EventHandler = &EnqueueRequestForReferencingProviderRevisions{}
@@ -49,25 +49,23 @@ func TestAdd(t *testing.T) {
 	prName := "coolpr"
 
 	cases := map[string]struct {
-		ctx              context.Context
-		obj              runtime.Object
-		client           client.Client
-		controllerConfig *v1alpha1.ControllerConfig
-		queue            adder
+		ctx    context.Context
+		obj    runtime.Object
+		client client.Client
+		queue  adder
 	}{
-		"ObjectIsNotAControllConfig": {
+		"ObjectIsNotADeploymentRuntimeConfig": {
 			queue: addFn(func(_ reconcile.Request) { t.Errorf("queue.Add() called unexpectedly") }),
 		},
 		"ListError": {
-			obj: &v1alpha1.ControllerConfig{ObjectMeta: metav1.ObjectMeta{Name: name}},
+			obj: &v1beta1.DeploymentRuntimeConfig{ObjectMeta: metav1.ObjectMeta{Name: name}},
 			client: &test.MockClient{
 				MockList: test.NewMockListFn(errBoom),
 			},
-			controllerConfig: &v1alpha1.ControllerConfig{},
-			queue:            addFn(func(_ reconcile.Request) { t.Errorf("queue.Add() called unexpectedly") }),
+			queue: addFn(func(_ reconcile.Request) { t.Errorf("queue.Add() called unexpectedly") }),
 		},
 		"SuccessfulEnqueue": {
-			obj: &v1alpha1.ControllerConfig{ObjectMeta: metav1.ObjectMeta{Name: name}},
+			obj: &v1beta1.DeploymentRuntimeConfig{ObjectMeta: metav1.ObjectMeta{Name: name}},
 			client: &test.MockClient{
 				MockList: test.NewMockListFn(nil, func(obj client.ObjectList) error {
 					l := obj.(*v1.ProviderRevisionList)
@@ -77,7 +75,7 @@ func TestAdd(t *testing.T) {
 							Spec: v1.ProviderRevisionSpec{
 								PackageRevisionRuntimeSpec: v1.PackageRevisionRuntimeSpec{
 									PackageRuntimeSpec: v1.PackageRuntimeSpec{
-										ControllerConfigReference: &v1.ControllerConfigReference{},
+										RuntimeConfigReference: &v1.RuntimeConfigReference{},
 									},
 								},
 							},

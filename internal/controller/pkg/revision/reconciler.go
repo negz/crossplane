@@ -49,7 +49,6 @@ import (
 
 	pkgmetav1 "github.com/crossplane/crossplane/apis/pkg/meta/v1"
 	v1 "github.com/crossplane/crossplane/apis/pkg/v1"
-	"github.com/crossplane/crossplane/apis/pkg/v1alpha1"
 	"github.com/crossplane/crossplane/apis/pkg/v1beta1"
 	"github.com/crossplane/crossplane/internal/controller/pkg/controller"
 	"github.com/crossplane/crossplane/internal/dag"
@@ -315,9 +314,7 @@ func SetupProviderRevision(mgr ctrl.Manager, o controller.Options) error {
 		Owns(&corev1.Service{}).
 		Owns(&corev1.Secret{}).
 		Owns(&corev1.ServiceAccount{}).
-		Watches(&v1alpha1.ControllerConfig{}, &EnqueueRequestForReferencingProviderRevisions{
-			client: mgr.GetClient(),
-		}).
+		Watches(&v1beta1.DeploymentRuntimeConfig{}, &EnqueueRequestForReferencingProviderRevisions{client: mgr.GetClient()}).
 		Watches(&v1beta1.ImageConfig{}, enqueueProviderRevisionsForImageConfig(mgr.GetClient(), log))
 
 	ro := []ReconcilerOption{
@@ -429,9 +426,7 @@ func SetupFunctionRevision(mgr ctrl.Manager, o controller.Options) error {
 		Owns(&corev1.Service{}).
 		Owns(&corev1.Secret{}).
 		Owns(&corev1.ServiceAccount{}).
-		Watches(&v1alpha1.ControllerConfig{}, &EnqueueRequestForReferencingFunctionRevisions{
-			client: mgr.GetClient(),
-		}).
+		Watches(&v1beta1.DeploymentRuntimeConfig{}, &EnqueueRequestForReferencingFunctionRevisions{client: mgr.GetClient()}).
 		Watches(&v1beta1.ImageConfig{}, enqueueFunctionRevisionsForImageConfig(mgr.GetClient(), log))
 
 	ro := []ReconcilerOption{
@@ -971,21 +966,6 @@ func (r *Reconciler) runtimeManifestBuilderOptions(ctx context.Context, pwr v1.P
 			return nil, errors.Wrap(err, errGetRuntimeConfig)
 		}
 		opts = append(opts, RuntimeManifestBuilderWithRuntimeConfig(rc))
-	}
-
-	// Note(turkenh): Until we completely remove the old controller config
-	// reference, we support both the old and the new way with DeploymentRuntimeConfig.
-	// If both are specified, we will start with DeploymentRuntimeConfig as the
-	// base, apply optional and mandatory overrides and finally apply the
-	// ControllerConfig on top. While it sounds like we are giving precedence
-	// to the ControllerConfig, this is to make sure that we keep the old
-	// behavior of the controller config reference for existing users.
-	cc := &v1alpha1.ControllerConfig{}
-	if ccRef := pwr.GetControllerConfigRef(); ccRef != nil {
-		if err := r.client.Get(ctx, types.NamespacedName{Name: ccRef.Name}, cc); err != nil {
-			return nil, errors.Wrap(err, errGetControllerConfig)
-		}
-		opts = append(opts, RuntimeManifestBuilderWithControllerConfig(cc))
 	}
 
 	sa := &corev1.ServiceAccount{}

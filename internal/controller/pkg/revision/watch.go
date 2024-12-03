@@ -27,7 +27,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	v1 "github.com/crossplane/crossplane/apis/pkg/v1"
-	"github.com/crossplane/crossplane/apis/pkg/v1alpha1"
 	"github.com/crossplane/crossplane/apis/pkg/v1beta1"
 )
 
@@ -68,10 +67,8 @@ func (e *EnqueueRequestForReferencingProviderRevisions) Generic(ctx context.Cont
 }
 
 func (e *EnqueueRequestForReferencingProviderRevisions) add(ctx context.Context, obj runtime.Object, queue adder) {
-	cc, isCC := obj.(*v1alpha1.ControllerConfig)
 	rc, isRC := obj.(*v1beta1.DeploymentRuntimeConfig)
-
-	if !isCC && !isRC {
+	if !isRC {
 		return
 	}
 
@@ -82,17 +79,9 @@ func (e *EnqueueRequestForReferencingProviderRevisions) add(ctx context.Context,
 	}
 
 	for _, pr := range l.Items {
-		if isCC {
-			ref := pr.GetControllerConfigRef()
-			if ref != nil && ref.Name == cc.GetName() {
-				queue.Add(reconcile.Request{NamespacedName: types.NamespacedName{Name: pr.GetName()}})
-			}
-		}
-		if isRC {
-			ref := pr.GetRuntimeConfigRef()
-			if ref != nil && ref.Name == rc.GetName() {
-				queue.Add(reconcile.Request{NamespacedName: types.NamespacedName{Name: pr.GetName()}})
-			}
+		ref := pr.GetRuntimeConfigRef()
+		if ref != nil && ref.Name == rc.GetName() {
+			queue.Add(reconcile.Request{NamespacedName: types.NamespacedName{Name: pr.GetName()}})
 		}
 	}
 }
@@ -130,10 +119,8 @@ func (e *EnqueueRequestForReferencingFunctionRevisions) Generic(ctx context.Cont
 }
 
 func (e *EnqueueRequestForReferencingFunctionRevisions) add(ctx context.Context, obj runtime.Object, queue adder) {
-	cc, isCC := obj.(*v1alpha1.ControllerConfig)
 	rc, isRC := obj.(*v1beta1.DeploymentRuntimeConfig)
-
-	if !isCC && !isRC {
+	if !isRC {
 		return
 	}
 
@@ -144,17 +131,9 @@ func (e *EnqueueRequestForReferencingFunctionRevisions) add(ctx context.Context,
 	}
 
 	for _, pr := range l.Items {
-		if isCC {
-			ref := pr.GetControllerConfigRef()
-			if ref != nil && ref.Name == cc.GetName() {
-				queue.Add(reconcile.Request{NamespacedName: types.NamespacedName{Name: pr.GetName()}})
-			}
-		}
-		if isRC {
-			ref := pr.GetRuntimeConfigRef()
-			if ref != nil && ref.Name == rc.GetName() {
-				queue.Add(reconcile.Request{NamespacedName: types.NamespacedName{Name: pr.GetName()}})
-			}
+		ref := pr.GetRuntimeConfigRef()
+		if ref != nil && ref.Name == rc.GetName() {
+			queue.Add(reconcile.Request{NamespacedName: types.NamespacedName{Name: pr.GetName()}})
 		}
 	}
 }
