@@ -122,8 +122,7 @@ message RunFunctionResponse {
   // Requirements that must be satisfied for this Function to run successfully.
   Requirements requirements = 5;
 
-  // Status conditions to be applied to the composite resource. Conditions may also
-  // optionally be applied to the composite resource's associated claim.
+  // Status conditions to be applied to the composite resource.
   repeated Condition conditions = 6;
 }
 
@@ -245,6 +244,8 @@ enum Ready {
 
 // A Result of running a Function.
 message Result {
+  reserved 4;
+
   // Severity of this result.
   Severity severity = 1;
 
@@ -254,9 +255,6 @@ message Result {
   // Optional PascalCase, machine-readable reason for this result. If omitted,
   // the value will be ComposeResources.
   optional string reason = 3;
-
-  // The resources this result targets.
-  optional Target target = 4;
 }
 
 // Severity of Function results.
@@ -278,25 +276,12 @@ enum Severity {
   SEVERITY_NORMAL = 3;
 }
 
-// Target of Function results and conditions.
-enum Target {
-  // If the target is unspecified, the result targets the composite resource.
-  TARGET_UNSPECIFIED = 0;
-
-  // Target the composite resource. Results that target the composite resource
-  // should include detailed, advanced information.
-  TARGET_COMPOSITE = 1;
-
-  // Target the composite and the claim. Results that target the composite and
-  // the claim should include only end-user friendly information.
-  TARGET_COMPOSITE_AND_CLAIM = 2;
-}
-
-// Status condition to be applied to the composite resource. Condition may also
-// optionally be applied to the composite resource's associated claim. For
-// detailed information on proper usage of status conditions, please see
+// Status condition to be applied to the composite resource. For detailed
+// information on proper usage of status conditions, please see
 // https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api-conventions.md#typical-status-properties.
 message Condition {
+  reserved 5;
+
   // Type of condition in PascalCase.
   string type = 1;
 
@@ -313,9 +298,6 @@ message Condition {
   // Message is a human readable message indicating details about the
   // transition. This may be an empty string.
   optional string message = 4;
-
-  // The resources this condition targets.
-  optional Target target = 5;
 }
 
 enum Status {

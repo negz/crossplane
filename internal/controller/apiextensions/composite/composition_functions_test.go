@@ -247,7 +247,6 @@ func TestFunctionCompose(t *testing.T) {
 								Severity: fnv1.Severity_SEVERITY_NORMAL,
 								Reason:   ptr.To("SomeReason"),
 								Message:  "A result before the fatal result with a specific Reason.",
-								Target:   fnv1.Target_TARGET_COMPOSITE_AND_CLAIM.Enum(),
 							},
 							// The fatal result
 							{
@@ -276,7 +275,6 @@ func TestFunctionCompose(t *testing.T) {
 								Status:  fnv1.Status_STATUS_CONDITION_TRUE,
 								Reason:  "Available",
 								Message: ptr.To("The deployment is ready."),
-								Target:  fnv1.Target_TARGET_COMPOSITE_AND_CLAIM.Enum(),
 							},
 						},
 					}, nil
@@ -698,7 +696,6 @@ func TestFunctionCompose(t *testing.T) {
 								Severity: fnv1.Severity_SEVERITY_NORMAL,
 								Reason:   ptr.To("SomeReason"),
 								Message:  "A result with all values explicitly set.",
-								Target:   fnv1.Target_TARGET_COMPOSITE_AND_CLAIM.Enum(),
 							},
 						},
 						Conditions: []*fnv1.Condition{
@@ -716,7 +713,6 @@ func TestFunctionCompose(t *testing.T) {
 								Status:  fnv1.Status_STATUS_CONDITION_TRUE,
 								Reason:  "Available",
 								Message: ptr.To("The deployment is ready."),
-								Target:  fnv1.Target_TARGET_COMPOSITE_AND_CLAIM.Enum(),
 							},
 						},
 					}
