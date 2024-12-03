@@ -35,6 +35,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	xpv1 "github.com/crossplane/crossplane-runtime/apis/common/v1"
+	"github.com/crossplane/crossplane-runtime/pkg/connection/store"
 	"github.com/crossplane/crossplane-runtime/pkg/errors"
 	"github.com/crossplane/crossplane-runtime/pkg/event"
 	"github.com/crossplane/crossplane-runtime/pkg/meta"
@@ -83,7 +84,7 @@ func TestFunctionCompose(t *testing.T) {
 					WithComposedResourceObserver(ComposedResourceObserverFn(func(_ context.Context, _ resource.Composite) (ComposedResourceStates, error) {
 						return ComposedResourceStates{}, nil
 					})),
-					WithCompositeConnectionDetailsFetcher(ConnectionDetailsFetcherFn(func(_ context.Context, _ resource.ConnectionSecretOwner) (managed.ConnectionDetails, error) {
+					WithCompositeConnectionDetailsFetcher(ConnectionDetailsFetcherFn(func(_ context.Context, _ store.SecretOwner) (managed.ConnectionDetails, error) {
 						return nil, errBoom
 					})),
 				},
@@ -100,7 +101,7 @@ func TestFunctionCompose(t *testing.T) {
 			reason: "We should return any error encountered while getting the XR's existing composed resources.",
 			params: params{
 				o: []FunctionComposerOption{
-					WithCompositeConnectionDetailsFetcher(ConnectionDetailsFetcherFn(func(_ context.Context, _ resource.ConnectionSecretOwner) (managed.ConnectionDetails, error) {
+					WithCompositeConnectionDetailsFetcher(ConnectionDetailsFetcherFn(func(_ context.Context, _ store.SecretOwner) (managed.ConnectionDetails, error) {
 						return nil, nil
 					})),
 					WithComposedResourceObserver(ComposedResourceObserverFn(func(_ context.Context, _ resource.Composite) (ComposedResourceStates, error) {
@@ -120,7 +121,7 @@ func TestFunctionCompose(t *testing.T) {
 			reason: "We should return any error encountered while unmarshalling a Composition Function input",
 			params: params{
 				o: []FunctionComposerOption{
-					WithCompositeConnectionDetailsFetcher(ConnectionDetailsFetcherFn(func(_ context.Context, _ resource.ConnectionSecretOwner) (managed.ConnectionDetails, error) {
+					WithCompositeConnectionDetailsFetcher(ConnectionDetailsFetcherFn(func(_ context.Context, _ store.SecretOwner) (managed.ConnectionDetails, error) {
 						return nil, nil
 					})),
 					WithComposedResourceObserver(ComposedResourceObserverFn(func(_ context.Context, _ resource.Composite) (ComposedResourceStates, error) {
@@ -156,7 +157,7 @@ func TestFunctionCompose(t *testing.T) {
 					MockGet: test.NewMockGetFn(errBoom),
 				},
 				o: []FunctionComposerOption{
-					WithCompositeConnectionDetailsFetcher(ConnectionDetailsFetcherFn(func(_ context.Context, _ resource.ConnectionSecretOwner) (managed.ConnectionDetails, error) {
+					WithCompositeConnectionDetailsFetcher(ConnectionDetailsFetcherFn(func(_ context.Context, _ store.SecretOwner) (managed.ConnectionDetails, error) {
 						return nil, nil
 					})),
 					WithComposedResourceObserver(ComposedResourceObserverFn(func(_ context.Context, _ resource.Composite) (ComposedResourceStates, error) {
@@ -200,7 +201,7 @@ func TestFunctionCompose(t *testing.T) {
 					return nil, errBoom
 				}),
 				o: []FunctionComposerOption{
-					WithCompositeConnectionDetailsFetcher(ConnectionDetailsFetcherFn(func(_ context.Context, _ resource.ConnectionSecretOwner) (managed.ConnectionDetails, error) {
+					WithCompositeConnectionDetailsFetcher(ConnectionDetailsFetcherFn(func(_ context.Context, _ store.SecretOwner) (managed.ConnectionDetails, error) {
 						return nil, nil
 					})),
 					WithComposedResourceObserver(ComposedResourceObserverFn(func(_ context.Context, _ resource.Composite) (ComposedResourceStates, error) {
@@ -281,7 +282,7 @@ func TestFunctionCompose(t *testing.T) {
 					}, nil
 				}),
 				o: []FunctionComposerOption{
-					WithCompositeConnectionDetailsFetcher(ConnectionDetailsFetcherFn(func(_ context.Context, _ resource.ConnectionSecretOwner) (managed.ConnectionDetails, error) {
+					WithCompositeConnectionDetailsFetcher(ConnectionDetailsFetcherFn(func(_ context.Context, _ store.SecretOwner) (managed.ConnectionDetails, error) {
 						return nil, nil
 					})),
 					WithComposedResourceObserver(ComposedResourceObserverFn(func(_ context.Context, _ resource.Composite) (ComposedResourceStates, error) {
@@ -307,47 +308,33 @@ func TestFunctionCompose(t *testing.T) {
 			want: want{
 				err: errors.Errorf(errFmtFatalResult, "run-cool-function", "oh no"),
 				res: CompositionResult{
-					Events: []TargetedEvent{
+					Events: []event.Event{
 						// The event with minimum values.
 						{
-							Event: event.Event{
-								Type:    "Normal",
-								Reason:  "ComposeResources",
-								Message: "A result before the fatal result with the default Reason.",
-							},
-							Detail: "Pipeline step \"run-cool-function\"",
-							Target: CompositionTargetComposite,
+							Type:    "Normal",
+							Reason:  "ComposeResources",
+							Message: "Pipeline step \"run-cool-function\": A result before the fatal result with the default Reason.",
 						},
 						// The event that provides all possible values.
 						{
-							Event: event.Event{
-								Type:    "Normal",
-								Reason:  "SomeReason",
-								Message: "A result before the fatal result with a specific Reason.",
-							},
-							Detail: "Pipeline step \"run-cool-function\"",
-							Target: CompositionTargetCompositeAndClaim,
+							Type:    "Normal",
+							Reason:  "SomeReason",
+							Message: "Pipeline step \"run-cool-function\": A result before the fatal result with a specific Reason.",
 						},
 					},
-					Conditions: []TargetedCondition{
+					Conditions: []xpv1.Condition{
 						// The condition with minimum values.
 						{
-							Condition: xpv1.Condition{
-								Type:   "DatabaseReady",
-								Status: "False",
-								Reason: "Creating",
-							},
-							Target: CompositionTargetComposite,
+							Type:   "DatabaseReady",
+							Status: "False",
+							Reason: "Creating",
 						},
 						// The condition that provides all possible values.
 						{
-							Condition: xpv1.Condition{
-								Type:    "DeploymentReady",
-								Status:  "True",
-								Reason:  "Available",
-								Message: "The deployment is ready.",
-							},
-							Target: CompositionTargetCompositeAndClaim,
+							Type:    "DeploymentReady",
+							Status:  "True",
+							Reason:  "Available",
+							Message: "The deployment is ready.",
 						},
 					},
 				},
@@ -370,7 +357,7 @@ func TestFunctionCompose(t *testing.T) {
 					return &fnv1.RunFunctionResponse{Desired: d}, nil
 				}),
 				o: []FunctionComposerOption{
-					WithCompositeConnectionDetailsFetcher(ConnectionDetailsFetcherFn(func(_ context.Context, _ resource.ConnectionSecretOwner) (managed.ConnectionDetails, error) {
+					WithCompositeConnectionDetailsFetcher(ConnectionDetailsFetcherFn(func(_ context.Context, _ store.SecretOwner) (managed.ConnectionDetails, error) {
 						return nil, nil
 					})),
 					WithComposedResourceObserver(ComposedResourceObserverFn(func(_ context.Context, _ resource.Composite) (ComposedResourceStates, error) {
@@ -420,7 +407,7 @@ func TestFunctionCompose(t *testing.T) {
 					return &fnv1.RunFunctionResponse{Desired: d}, nil
 				}),
 				o: []FunctionComposerOption{
-					WithCompositeConnectionDetailsFetcher(ConnectionDetailsFetcherFn(func(_ context.Context, _ resource.ConnectionSecretOwner) (managed.ConnectionDetails, error) {
+					WithCompositeConnectionDetailsFetcher(ConnectionDetailsFetcherFn(func(_ context.Context, _ store.SecretOwner) (managed.ConnectionDetails, error) {
 						return nil, nil
 					})),
 					WithComposedResourceObserver(ComposedResourceObserverFn(func(_ context.Context, _ resource.Composite) (ComposedResourceStates, error) {
@@ -457,7 +444,7 @@ func TestFunctionCompose(t *testing.T) {
 					return &fnv1.RunFunctionResponse{}, nil
 				}),
 				o: []FunctionComposerOption{
-					WithCompositeConnectionDetailsFetcher(ConnectionDetailsFetcherFn(func(_ context.Context, _ resource.ConnectionSecretOwner) (managed.ConnectionDetails, error) {
+					WithCompositeConnectionDetailsFetcher(ConnectionDetailsFetcherFn(func(_ context.Context, _ store.SecretOwner) (managed.ConnectionDetails, error) {
 						return nil, nil
 					})),
 					WithComposedResourceObserver(ComposedResourceObserverFn(func(_ context.Context, _ resource.Composite) (ComposedResourceStates, error) {
@@ -505,7 +492,7 @@ func TestFunctionCompose(t *testing.T) {
 					return &fnv1.RunFunctionResponse{}, nil
 				}),
 				o: []FunctionComposerOption{
-					WithCompositeConnectionDetailsFetcher(ConnectionDetailsFetcherFn(func(_ context.Context, _ resource.ConnectionSecretOwner) (managed.ConnectionDetails, error) {
+					WithCompositeConnectionDetailsFetcher(ConnectionDetailsFetcherFn(func(_ context.Context, _ store.SecretOwner) (managed.ConnectionDetails, error) {
 						return nil, nil
 					})),
 					WithComposedResourceObserver(ComposedResourceObserverFn(func(_ context.Context, _ resource.Composite) (ComposedResourceStates, error) {
@@ -555,7 +542,7 @@ func TestFunctionCompose(t *testing.T) {
 					return &fnv1.RunFunctionResponse{Desired: d}, nil
 				}),
 				o: []FunctionComposerOption{
-					WithCompositeConnectionDetailsFetcher(ConnectionDetailsFetcherFn(func(_ context.Context, _ resource.ConnectionSecretOwner) (managed.ConnectionDetails, error) {
+					WithCompositeConnectionDetailsFetcher(ConnectionDetailsFetcherFn(func(_ context.Context, _ store.SecretOwner) (managed.ConnectionDetails, error) {
 						return nil, nil
 					})),
 					WithComposedResourceObserver(ComposedResourceObserverFn(func(_ context.Context, _ resource.Composite) (ComposedResourceStates, error) {
@@ -616,7 +603,7 @@ func TestFunctionCompose(t *testing.T) {
 					return &fnv1.RunFunctionResponse{Desired: d}, nil
 				}),
 				o: []FunctionComposerOption{
-					WithCompositeConnectionDetailsFetcher(ConnectionDetailsFetcherFn(func(_ context.Context, _ resource.ConnectionSecretOwner) (managed.ConnectionDetails, error) {
+					WithCompositeConnectionDetailsFetcher(ConnectionDetailsFetcherFn(func(_ context.Context, _ store.SecretOwner) (managed.ConnectionDetails, error) {
 						return nil, nil
 					})),
 					WithComposedResourceObserver(ComposedResourceObserverFn(func(_ context.Context, _ resource.Composite) (ComposedResourceStates, error) {
@@ -736,7 +723,7 @@ func TestFunctionCompose(t *testing.T) {
 					return rsp, nil
 				}),
 				o: []FunctionComposerOption{
-					WithCompositeConnectionDetailsFetcher(ConnectionDetailsFetcherFn(func(_ context.Context, _ resource.ConnectionSecretOwner) (managed.ConnectionDetails, error) {
+					WithCompositeConnectionDetailsFetcher(ConnectionDetailsFetcherFn(func(_ context.Context, _ store.SecretOwner) (managed.ConnectionDetails, error) {
 						return nil, nil
 					})),
 					WithComposedResourceObserver(ComposedResourceObserverFn(func(_ context.Context, _ resource.Composite) (ComposedResourceStates, error) {
@@ -803,62 +790,41 @@ func TestFunctionCompose(t *testing.T) {
 					ConnectionDetails: managed.ConnectionDetails{
 						"from": []byte("function-pipeline"),
 					},
-					Events: []TargetedEvent{
+					Events: []event.Event{
 						{
-							Event: event.Event{
-								Type:    "Normal",
-								Reason:  "ComposeResources",
-								Message: "A normal result",
-							},
-							Detail: "Pipeline step \"run-cool-function\"",
-							Target: CompositionTargetComposite,
+							Type:    "Normal",
+							Reason:  "ComposeResources",
+							Message: "Pipeline step \"run-cool-function\": A normal result",
 						},
 						{
-							Event: event.Event{
-								Type:    "Warning",
-								Reason:  "ComposeResources",
-								Message: "A warning result",
-							},
-							Detail: "Pipeline step \"run-cool-function\"",
-							Target: CompositionTargetComposite,
+							Type:    "Warning",
+							Reason:  "ComposeResources",
+							Message: "Pipeline step \"run-cool-function\": A warning result",
 						},
 						{
-							Event: event.Event{
-								Type:    "Warning",
-								Reason:  "ComposeResources",
-								Message: "Pipeline step \"run-cool-function\" returned a result of unknown severity (assuming warning): A result of unspecified severity",
-							},
-							Target: CompositionTargetComposite,
+							Type:    "Warning",
+							Reason:  "ComposeResources",
+							Message: "Pipeline step \"run-cool-function\" returned a result of unknown severity (assuming warning): A result of unspecified severity",
 						},
 						{
-							Event: event.Event{
-								Type:    "Normal",
-								Reason:  "SomeReason",
-								Message: "A result with all values explicitly set.",
-							},
-							Detail: "Pipeline step \"run-cool-function\"",
-							Target: CompositionTargetCompositeAndClaim,
+							Type:    "Normal",
+							Reason:  "SomeReason",
+							Message: "Pipeline step \"run-cool-function\": A result with all values explicitly set.",
 						},
 					},
-					Conditions: []TargetedCondition{
+					Conditions: []xpv1.Condition{
 						// The condition with minimum values.
 						{
-							Condition: xpv1.Condition{
-								Type:   "DatabaseReady",
-								Status: "False",
-								Reason: "Creating",
-							},
-							Target: CompositionTargetComposite,
+							Type:   "DatabaseReady",
+							Status: "False",
+							Reason: "Creating",
 						},
 						// The condition that provides all possible values.
 						{
-							Condition: xpv1.Condition{
-								Type:    "DeploymentReady",
-								Status:  "True",
-								Reason:  "Available",
-								Message: "The deployment is ready.",
-							},
-							Target: CompositionTargetCompositeAndClaim,
+							Type:    "DeploymentReady",
+							Status:  "True",
+							Reason:  "Available",
+							Message: "The deployment is ready.",
 						},
 					},
 				},
@@ -1041,7 +1007,7 @@ func TestGetComposedResources(t *testing.T) {
 						return nil
 					}),
 				},
-				f: ConnectionDetailsFetcherFn(func(_ context.Context, _ resource.ConnectionSecretOwner) (managed.ConnectionDetails, error) {
+				f: ConnectionDetailsFetcherFn(func(_ context.Context, _ store.SecretOwner) (managed.ConnectionDetails, error) {
 					return nil, errBoom
 				}),
 			},
@@ -1071,7 +1037,7 @@ func TestGetComposedResources(t *testing.T) {
 						return nil
 					}),
 				},
-				f: ConnectionDetailsFetcherFn(func(_ context.Context, _ resource.ConnectionSecretOwner) (managed.ConnectionDetails, error) {
+				f: ConnectionDetailsFetcherFn(func(_ context.Context, _ store.SecretOwner) (managed.ConnectionDetails, error) {
 					return details, nil
 				}),
 			},

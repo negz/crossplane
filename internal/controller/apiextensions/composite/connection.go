@@ -19,16 +19,16 @@ package composite
 import (
 	"context"
 
+	"github.com/crossplane/crossplane-runtime/pkg/connection/store"
 	"github.com/crossplane/crossplane-runtime/pkg/reconciler/managed"
-	"github.com/crossplane/crossplane-runtime/pkg/resource"
 )
 
 // A ConnectionDetailsFetcherFn fetches the connection details of the supplied
 // resource, if any.
-type ConnectionDetailsFetcherFn func(ctx context.Context, o resource.ConnectionSecretOwner) (managed.ConnectionDetails, error)
+type ConnectionDetailsFetcherFn func(ctx context.Context, o store.SecretOwner) (managed.ConnectionDetails, error)
 
 // FetchConnection calls the FetchConnectionDetailsFn.
-func (f ConnectionDetailsFetcherFn) FetchConnection(ctx context.Context, o resource.ConnectionSecretOwner) (managed.ConnectionDetails, error) {
+func (f ConnectionDetailsFetcherFn) FetchConnection(ctx context.Context, o store.SecretOwner) (managed.ConnectionDetails, error) {
 	return f(ctx, o)
 }
 
@@ -36,7 +36,7 @@ func (f ConnectionDetailsFetcherFn) FetchConnection(ctx context.Context, o resou
 type ConnectionDetailsFetcherChain []managed.ConnectionDetailsFetcher
 
 // FetchConnection details of the supplied composed resource, if any.
-func (fc ConnectionDetailsFetcherChain) FetchConnection(ctx context.Context, o resource.ConnectionSecretOwner) (managed.ConnectionDetails, error) {
+func (fc ConnectionDetailsFetcherChain) FetchConnection(ctx context.Context, o store.SecretOwner) (managed.ConnectionDetails, error) {
 	all := make(managed.ConnectionDetails)
 	for _, p := range fc {
 		conn, err := p.FetchConnection(ctx, o)
@@ -66,7 +66,7 @@ func NewSecretStoreConnectionPublisher(p managed.ConnectionPublisher, filter []s
 }
 
 // PublishConnection details for the supplied resource.
-func (p *SecretStoreConnectionPublisher) PublishConnection(ctx context.Context, o resource.ConnectionSecretOwner, c managed.ConnectionDetails) (published bool, err error) {
+func (p *SecretStoreConnectionPublisher) PublishConnection(ctx context.Context, o store.SecretOwner, c managed.ConnectionDetails) (published bool, err error) {
 	// This resource does not want to expose a connection secret.
 	if o.GetPublishConnectionDetailsTo() == nil {
 		return false, nil
@@ -90,6 +90,6 @@ func (p *SecretStoreConnectionPublisher) PublishConnection(ctx context.Context, 
 }
 
 // UnpublishConnection details for the supplied resource.
-func (p *SecretStoreConnectionPublisher) UnpublishConnection(ctx context.Context, o resource.ConnectionSecretOwner, c managed.ConnectionDetails) error {
+func (p *SecretStoreConnectionPublisher) UnpublishConnection(ctx context.Context, o store.SecretOwner, c managed.ConnectionDetails) error {
 	return p.publisher.UnpublishConnection(ctx, o, c)
 }

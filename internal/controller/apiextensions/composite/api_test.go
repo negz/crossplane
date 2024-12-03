@@ -565,9 +565,9 @@ func TestAPIDefaultCompositionSelector(t *testing.T) {
 		},
 	}
 	type args struct {
-		kube   client.Client
-		defRef corev1.ObjectReference
-		cp     resource.Composite
+		kube client.Client
+		name string
+		cp   resource.Composite
 	}
 	type want struct {
 		cp  resource.Composite
@@ -582,7 +582,6 @@ func TestAPIDefaultCompositionSelector(t *testing.T) {
 		"AlreadyResolved": {
 			reason: "Should be no-op if a composition is already selected",
 			args: args{
-				defRef: corev1.ObjectReference{},
 				cp: &fake.Composite{
 					CompositionReferencer: fake.CompositionReferencer{Ref: &corev1.ObjectReference{Name: comp.Name}},
 				},
@@ -596,7 +595,6 @@ func TestAPIDefaultCompositionSelector(t *testing.T) {
 		"SelectorInPlace": {
 			reason: "Should be no-op if a composition selector is in place",
 			args: args{
-				defRef: corev1.ObjectReference{},
 				cp: &fake.Composite{
 					CompositionSelector: fake.CompositionSelector{Sel: &metav1.LabelSelector{MatchLabels: map[string]string{"foo": "bar"}}},
 				},
@@ -660,7 +658,7 @@ func TestAPIDefaultCompositionSelector(t *testing.T) {
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
-			c := NewAPIDefaultCompositionSelector(tc.args.kube, tc.args.defRef, event.NewNopRecorder())
+			c := NewAPIDefaultCompositionSelector(tc.args.kube, tc.args.name, event.NewNopRecorder())
 			err := c.SelectComposition(context.Background(), tc.args.cp)
 			if diff := cmp.Diff(tc.want.err, err, test.EquateErrors()); diff != "" {
 				t.Errorf("\n%s\nSelectComposition(...): -want, +got:\n%s", tc.reason, diff)

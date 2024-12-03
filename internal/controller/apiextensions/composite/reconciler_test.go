@@ -34,6 +34,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	xpv1 "github.com/crossplane/crossplane-runtime/apis/common/v1"
+	"github.com/crossplane/crossplane-runtime/pkg/connection/store"
 	"github.com/crossplane/crossplane-runtime/pkg/errors"
 	"github.com/crossplane/crossplane-runtime/pkg/event"
 	"github.com/crossplane/crossplane-runtime/pkg/meta"
@@ -42,7 +43,6 @@ import (
 	"github.com/crossplane/crossplane-runtime/pkg/resource/unstructured/claim"
 	"github.com/crossplane/crossplane-runtime/pkg/resource/unstructured/composed"
 	"github.com/crossplane/crossplane-runtime/pkg/resource/unstructured/composite"
-	"github.com/crossplane/crossplane-runtime/pkg/resource/unstructured/reference"
 	"github.com/crossplane/crossplane-runtime/pkg/test"
 
 	v1 "github.com/crossplane/crossplane/apis/apiextensions/v1"
@@ -106,8 +106,8 @@ func TestReconcile(t *testing.T) {
 				},
 				opts: []ReconcilerOption{
 					WithCompositeFinalizer(resource.NewNopFinalizer()),
-					WithConnectionPublishers(managed.ConnectionPublisherFns{
-						UnpublishConnectionFn: func(_ context.Context, _ resource.ConnectionSecretOwner, _ managed.ConnectionDetails) error {
+					WithConnectionPublisher(managed.ConnectionPublisherFns{
+						UnpublishConnectionFn: func(_ context.Context, _ store.SecretOwner, _ managed.ConnectionDetails) error {
 							return errBoom
 						},
 					}),
@@ -135,8 +135,8 @@ func TestReconcile(t *testing.T) {
 							return errBoom
 						},
 					}),
-					WithConnectionPublishers(managed.ConnectionPublisherFns{
-						UnpublishConnectionFn: func(_ context.Context, _ resource.ConnectionSecretOwner, _ managed.ConnectionDetails) error {
+					WithConnectionPublisher(managed.ConnectionPublisherFns{
+						UnpublishConnectionFn: func(_ context.Context, _ store.SecretOwner, _ managed.ConnectionDetails) error {
 							return nil
 						},
 					}),
@@ -164,8 +164,8 @@ func TestReconcile(t *testing.T) {
 							return nil
 						},
 					}),
-					WithConnectionPublishers(managed.ConnectionPublisherFns{
-						UnpublishConnectionFn: func(_ context.Context, _ resource.ConnectionSecretOwner, _ managed.ConnectionDetails) error {
+					WithConnectionPublisher(managed.ConnectionPublisherFns{
+						UnpublishConnectionFn: func(_ context.Context, _ store.SecretOwner, _ managed.ConnectionDetails) error {
 							return nil
 						},
 					}),
@@ -356,8 +356,8 @@ func TestReconcile(t *testing.T) {
 					WithComposer(ComposerFn(func(_ context.Context, _ *composite.Unstructured, _ CompositionRequest) (CompositionResult, error) {
 						return CompositionResult{}, nil
 					})),
-					WithConnectionPublishers(managed.ConnectionPublisherFns{
-						PublishConnectionFn: func(_ context.Context, _ resource.ConnectionSecretOwner, _ managed.ConnectionDetails) (published bool, err error) {
+					WithConnectionPublisher(managed.ConnectionPublisherFns{
+						PublishConnectionFn: func(_ context.Context, _ store.SecretOwner, _ managed.ConnectionDetails) (published bool, err error) {
 							return false, errBoom
 						},
 					}),
@@ -393,16 +393,11 @@ func TestReconcile(t *testing.T) {
 					})),
 					WithComposer(ComposerFn(func(_ context.Context, _ *composite.Unstructured, _ CompositionRequest) (CompositionResult, error) {
 						return CompositionResult{
-							Events: []TargetedEvent{
-								{
-									Event:  event.Warning("Warning", errBoom),
-									Target: CompositionTargetComposite,
-								},
-							},
+							Events: []event.Event{event.Warning("Warning", errBoom)},
 						}, nil
 					})),
-					WithConnectionPublishers(managed.ConnectionPublisherFns{
-						PublishConnectionFn: func(_ context.Context, _ resource.ConnectionSecretOwner, _ managed.ConnectionDetails) (published bool, err error) {
+					WithConnectionPublisher(managed.ConnectionPublisherFns{
+						PublishConnectionFn: func(_ context.Context, _ store.SecretOwner, _ managed.ConnectionDetails) (published bool, err error) {
 							return false, nil
 						},
 					}),
@@ -465,8 +460,8 @@ func TestReconcile(t *testing.T) {
 							}},
 						}, nil
 					})),
-					WithConnectionPublishers(managed.ConnectionPublisherFns{
-						PublishConnectionFn: func(_ context.Context, _ resource.ConnectionSecretOwner, _ managed.ConnectionDetails) (published bool, err error) {
+					WithConnectionPublisher(managed.ConnectionPublisherFns{
+						PublishConnectionFn: func(_ context.Context, _ store.SecretOwner, _ managed.ConnectionDetails) (published bool, err error) {
 							return false, nil
 						},
 					}),
@@ -513,8 +508,8 @@ func TestReconcile(t *testing.T) {
 					WithComposer(ComposerFn(func(_ context.Context, _ *composite.Unstructured, _ CompositionRequest) (CompositionResult, error) {
 						return CompositionResult{ConnectionDetails: cd}, nil
 					})),
-					WithConnectionPublishers(managed.ConnectionPublisherFns{
-						PublishConnectionFn: func(_ context.Context, _ resource.ConnectionSecretOwner, got managed.ConnectionDetails) (published bool, err error) {
+					WithConnectionPublisher(managed.ConnectionPublisherFns{
+						PublishConnectionFn: func(_ context.Context, _ store.SecretOwner, got managed.ConnectionDetails) (published bool, err error) {
 							want := cd
 							if diff := cmp.Diff(want, got); diff != "" {
 								t.Errorf("PublishConnection(...): -want, +got:\n%s", diff)
@@ -604,8 +599,8 @@ func TestReconcile(t *testing.T) {
 					WithComposer(ComposerFn(func(_ context.Context, _ *composite.Unstructured, _ CompositionRequest) (CompositionResult, error) {
 						return CompositionResult{}, nil
 					})),
-					WithConnectionPublishers(managed.ConnectionPublisherFns{
-						PublishConnectionFn: func(_ context.Context, _ resource.ConnectionSecretOwner, _ managed.ConnectionDetails) (published bool, err error) {
+					WithConnectionPublisher(managed.ConnectionPublisherFns{
+						PublishConnectionFn: func(_ context.Context, _ store.SecretOwner, _ managed.ConnectionDetails) (published bool, err error) {
 							return true, nil
 						},
 					}),
@@ -647,8 +642,8 @@ func TestReconcile(t *testing.T) {
 					WithComposer(ComposerFn(func(_ context.Context, _ *composite.Unstructured, _ CompositionRequest) (CompositionResult, error) {
 						return CompositionResult{}, nil
 					})),
-					WithConnectionPublishers(managed.ConnectionPublisherFns{
-						PublishConnectionFn: func(_ context.Context, _ resource.ConnectionSecretOwner, _ managed.ConnectionDetails) (published bool, err error) {
+					WithConnectionPublisher(managed.ConnectionPublisherFns{
+						PublishConnectionFn: func(_ context.Context, _ store.SecretOwner, _ managed.ConnectionDetails) (published bool, err error) {
 							return true, nil
 						},
 					}),
@@ -662,18 +657,7 @@ func TestReconcile(t *testing.T) {
 			reason: "We should emit custom events and set custom conditions that were returned by the composer on both the composite resource and the claim.",
 			args: args{
 				client: &test.MockClient{
-					MockGet: test.NewMockGetFn(nil, func(obj client.Object) error {
-						if xr, ok := obj.(*composite.Unstructured); ok {
-							// non-nil claim ref to trigger claim Get()
-							xr.SetClaimReference(&reference.Claim{})
-							return nil
-						}
-						if cm, ok := obj.(*claim.Unstructured); ok {
-							claim.New(claim.WithGroupVersionKind(schema.GroupVersionKind{})).DeepCopyInto(cm)
-							return nil
-						}
-						return nil
-					}),
+					MockGet: test.NewMockGetFn(nil),
 					MockStatusUpdate: WantComposite(t, NewComposite(func(cr resource.Composite) {
 						cr.SetCompositionReference(&corev1.ObjectReference{})
 						cr.SetConditions(
@@ -694,58 +678,33 @@ func TestReconcile(t *testing.T) {
 							xpv1.ReconcileSuccess(),
 							xpv1.Available(),
 						)
-						cr.(*composite.Unstructured).SetClaimConditionTypes("DatabaseReady")
-						cr.SetClaimReference(&reference.Claim{})
 					})),
 				},
 				opts: []ReconcilerOption{
 					WithRecorder(newTestRecorder(
-						eventArgs{
-							Kind: compositeKind,
-							Event: event.Event{
-								Type:        event.Type(corev1.EventTypeNormal),
-								Reason:      "SelectComposition",
-								Message:     "Successfully selected composition: ",
-								Annotations: map[string]string{},
-							},
+						event.Event{
+							Type:        event.Type(corev1.EventTypeNormal),
+							Reason:      "SelectComposition",
+							Message:     "Successfully selected composition: ",
+							Annotations: map[string]string{},
 						},
-						eventArgs{
-							Kind: compositeKind,
-							Event: event.Event{
-								Type:   event.TypeNormal,
-								Reason: "DatabaseAvailable",
-								// The composite should have the "Pipeline step" prefix.
-								Message:     "Pipeline step \"some-function\": This is an event for database availability.",
-								Annotations: map[string]string{},
-							},
+						event.Event{
+							Type:        event.TypeNormal,
+							Reason:      "DatabaseAvailable",
+							Message:     "Pipeline step \"some-function\": This is an event for database availability.",
+							Annotations: map[string]string{},
 						},
-						eventArgs{
-							Kind: claimKind,
-							Event: event.Event{
-								Type:   event.TypeNormal,
-								Reason: "DatabaseAvailable",
-								// The claim should not have the "Pipeline step" prefix.
-								Message:     "This is an event for database availability.",
-								Annotations: map[string]string{},
-							},
+						event.Event{
+							Type:        event.TypeNormal,
+							Reason:      "SyncSuccess",
+							Message:     "Pipeline step \"some-function\": Internal sync was successful.",
+							Annotations: map[string]string{},
 						},
-						eventArgs{
-							Kind: compositeKind,
-							Event: event.Event{
-								Type:        event.TypeNormal,
-								Reason:      "SyncSuccess",
-								Message:     "Pipeline step \"some-function\": Internal sync was successful.",
-								Annotations: map[string]string{},
-							},
-						},
-						eventArgs{
-							Kind: compositeKind,
-							Event: event.Event{
-								Type:        event.Type(corev1.EventTypeNormal),
-								Reason:      "ComposeResources",
-								Message:     "Successfully composed resources",
-								Annotations: map[string]string{},
-							},
+						event.Event{
+							Type:        event.Type(corev1.EventTypeNormal),
+							Reason:      "ComposeResources",
+							Message:     "Successfully composed resources",
+							Annotations: map[string]string{},
 						},
 					)),
 					WithCompositeFinalizer(resource.NewNopFinalizer()),
@@ -764,48 +723,32 @@ func TestReconcile(t *testing.T) {
 						return CompositionResult{
 							Composed:          []ComposedResource{},
 							ConnectionDetails: cd,
-							Events: []TargetedEvent{
+							Events: []event.Event{
 								{
-									Event: event.Event{
-										Type:        event.TypeNormal,
-										Reason:      "DatabaseAvailable",
-										Message:     "This is an event for database availability.",
-										Annotations: map[string]string{},
-									},
-									Detail: "Pipeline step \"some-function\"",
-									Target: CompositionTargetCompositeAndClaim,
+									Type:    event.TypeNormal,
+									Reason:  "DatabaseAvailable",
+									Message: "Pipeline step \"some-function\": This is an event for database availability.",
 								},
 								{
-									Event: event.Event{
-										Type:        event.TypeNormal,
-										Reason:      "SyncSuccess",
-										Message:     "Internal sync was successful.",
-										Annotations: map[string]string{},
-									},
-									Detail: "Pipeline step \"some-function\"",
-									Target: CompositionTargetComposite,
+									Type:    event.TypeNormal,
+									Reason:  "SyncSuccess",
+									Message: "Pipeline step \"some-function\": Internal sync was successful.",
 								},
 							},
-							Conditions: []TargetedCondition{
+							Conditions: []xpv1.Condition{
 								{
-									Condition: xpv1.Condition{
-										Type:    "DatabaseReady",
-										Status:  corev1.ConditionTrue,
-										Reason:  "Available",
-										Message: "This is a condition for database availability.",
-									},
-									Target: CompositionTargetCompositeAndClaim,
+									Type:    "DatabaseReady",
+									Status:  corev1.ConditionTrue,
+									Reason:  "Available",
+									Message: "This is a condition for database availability.",
 								},
 								{
-									Condition: xpv1.Condition{
-										Type:               "InternalSync",
-										Status:             corev1.ConditionTrue,
-										LastTransitionTime: metav1.Time{},
-										Reason:             "SyncSuccess",
-										Message:            "This is a condition representing an internal sync process.",
-										ObservedGeneration: 0,
-									},
-									Target: CompositionTargetComposite,
+									Type:               "InternalSync",
+									Status:             corev1.ConditionTrue,
+									LastTransitionTime: metav1.Time{},
+									Reason:             "SyncSuccess",
+									Message:            "This is a condition representing an internal sync process.",
+									ObservedGeneration: 0,
 								},
 							},
 						}, nil
@@ -817,25 +760,18 @@ func TestReconcile(t *testing.T) {
 			},
 		},
 		"CustomEventsAndConditionFatal": {
-			reason: "In the case of a fatal result from the composer, we should set all custom conditions that were seen. If any custom conditions were not seen, they should be marked as Unknown. The error message should be emitted as an event to the composite but not the claim.",
+			reason: "In the case of a fatal result from the composer, we should set all custom conditions that were seen. If any custom conditions were not seen, they should be marked as Unknown. The error message should be emitted as an event to the composite.",
 			args: args{
 				client: &test.MockClient{
 					MockGet: test.NewMockGetFn(nil, func(obj client.Object) error {
 						if xr, ok := obj.(*composite.Unstructured); ok {
 							// non-nil claim ref to trigger claim Get()
-							xr.SetClaimReference(&reference.Claim{})
 							xr.SetConditions(xpv1.Condition{
 								Type:    "DatabaseReady",
 								Status:  corev1.ConditionTrue,
 								Reason:  "Available",
 								Message: "This is a condition for database availability.",
 							})
-							xr.SetClaimConditionTypes("DatabaseReady")
-							return nil
-						}
-						if cm, ok := obj.(*claim.Unstructured); ok {
-							claim.New(claim.WithGroupVersionKind(schema.GroupVersionKind{})).DeepCopyInto(cm)
-							return nil
 						}
 						return nil
 					}),
@@ -867,66 +803,25 @@ func TestReconcile(t *testing.T) {
 								ObservedGeneration: 0,
 							},
 						)
-
-						cr.(*composite.Unstructured).SetClaimConditionTypes(
-							"DatabaseReady",
-							"BucketReady",
-						)
-						cr.SetClaimReference(&reference.Claim{})
 					})),
 				},
 				opts: []ReconcilerOption{
 					WithRecorder(newTestRecorder(
-						eventArgs{
-							Kind: compositeKind,
-							Event: event.Event{
-								Type:        event.Type(corev1.EventTypeNormal),
-								Reason:      "SelectComposition",
-								Message:     "Successfully selected composition: ",
-								Annotations: map[string]string{},
-							},
+						event.Event{
+							Type:    event.Type(corev1.EventTypeNormal),
+							Reason:  "SelectComposition",
+							Message: "Successfully selected composition: ",
 						},
-						eventArgs{
-							Kind:  compositeKind,
-							Event: event.Warning("ComposeResources", fmt.Errorf("cannot compose resources: %w", errBoom)),
+						event.Warning("ComposeResources", fmt.Errorf("cannot compose resources: %w", errBoom)),
+						event.Event{
+							Type:    event.TypeNormal,
+							Reason:  "DatabaseAvailable",
+							Message: "Pipeline step \"some-function\": This is an event for database availability.",
 						},
-						eventArgs{
-							Kind: compositeKind,
-							Event: event.Event{
-								Type:    event.TypeNormal,
-								Reason:  "DatabaseAvailable",
-								Message: "Pipeline step \"some-function\": This is an event for database availability.",
-							},
-						},
-						eventArgs{
-							Kind: claimKind,
-							Event: event.Event{
-								Type:   event.TypeNormal,
-								Reason: "DatabaseAvailable",
-								// The claim should not have the "Pipeline step" prefix.
-								Message: "This is an event for database availability.",
-							},
-						},
-						eventArgs{
-							Kind: compositeKind,
-							Event: event.Event{
-								Type:   event.TypeNormal,
-								Reason: "SyncSuccess",
-								// The composite should have the "Pipeline step" prefix.
-								Message:     "Pipeline step \"some-function\": Internal sync was successful.",
-								Annotations: map[string]string{},
-							},
-						},
-						eventArgs{
-							Kind: compositeKind,
-							Event: event.Event{
-								Type:   event.TypeNormal,
-								Reason: "EventNoDetail",
-								// The composite should not have the prefix as it had an empty
-								// detail.
-								Message:     "This event should not contain a detail prefix.",
-								Annotations: map[string]string{},
-							},
+						event.Event{
+							Type:    event.TypeNormal,
+							Reason:  "SyncSuccess",
+							Message: "Pipeline step \"some-function\": Internal sync was successful.",
 						},
 					)),
 					WithCompositeFinalizer(resource.NewNopFinalizer()),
@@ -945,58 +840,34 @@ func TestReconcile(t *testing.T) {
 						return CompositionResult{
 							Composed:          []ComposedResource{},
 							ConnectionDetails: cd,
-							Events: []TargetedEvent{
+							Events: []event.Event{
 								{
-									Event: event.Event{
-										Type:    event.TypeNormal,
-										Reason:  "DatabaseAvailable",
-										Message: "This is an event for database availability.",
-									},
-									Detail: "Pipeline step \"some-function\"",
-									Target: CompositionTargetCompositeAndClaim,
+									Type:    event.TypeNormal,
+									Reason:  "DatabaseAvailable",
+									Message: "Pipeline step \"some-function\": This is an event for database availability.",
 								},
 								{
-									Event: event.Event{
-										Type:        event.TypeNormal,
-										Reason:      "SyncSuccess",
-										Message:     "Internal sync was successful.",
-										Annotations: map[string]string{},
-									},
-									Detail: "Pipeline step \"some-function\"",
-									Target: CompositionTargetComposite,
-								},
-								{
-									Event: event.Event{
-										Type:        event.TypeNormal,
-										Reason:      "EventNoDetail",
-										Message:     "This event should not contain a detail prefix.",
-										Annotations: map[string]string{},
-									},
-									Target: CompositionTargetComposite,
+									Type:    event.TypeNormal,
+									Reason:  "SyncSuccess",
+									Message: "Pipeline step \"some-function\": Internal sync was successful.",
 								},
 							},
-							Conditions: []TargetedCondition{
+							Conditions: []xpv1.Condition{
 								{
-									Condition: xpv1.Condition{
-										Type:               "InternalSync",
-										Status:             corev1.ConditionTrue,
-										LastTransitionTime: metav1.Time{},
-										Reason:             "SyncSuccess",
-										Message:            "This is a condition representing an internal sync process.",
-										ObservedGeneration: 0,
-									},
-									Target: CompositionTargetComposite,
+									Type:               "InternalSync",
+									Status:             corev1.ConditionTrue,
+									LastTransitionTime: metav1.Time{},
+									Reason:             "SyncSuccess",
+									Message:            "This is a condition representing an internal sync process.",
+									ObservedGeneration: 0,
 								},
 								{
-									Condition: xpv1.Condition{
-										Type:               "BucketReady",
-										Status:             corev1.ConditionTrue,
-										LastTransitionTime: metav1.Time{},
-										Reason:             "Available",
-										Message:            "This is a condition for bucket availability.",
-										ObservedGeneration: 0,
-									},
-									Target: CompositionTargetCompositeAndClaim,
+									Type:               "BucketReady",
+									Status:             corev1.ConditionTrue,
+									LastTransitionTime: metav1.Time{},
+									Reason:             "Available",
+									Message:            "This is a condition for bucket availability.",
+									ObservedGeneration: 0,
 								},
 							},
 						}, errBoom
@@ -1013,8 +884,6 @@ func TestReconcile(t *testing.T) {
 				client: &test.MockClient{
 					MockGet: test.NewMockGetFn(nil, func(obj client.Object) error {
 						if xr, ok := obj.(*composite.Unstructured); ok {
-							// non-nil claim ref to trigger claim Get()
-							xr.SetClaimReference(&reference.Claim{})
 							// The database condition already exists on the XR.
 							xr.SetConditions(xpv1.Condition{
 								Type:    "DatabaseReady",
@@ -1030,7 +899,6 @@ func TestReconcile(t *testing.T) {
 								Message: "Waiting for bucket to be created.",
 							})
 
-							xr.SetClaimConditionTypes("DatabaseReady", "BucketReady")
 							return nil
 						}
 						if cm, ok := obj.(*claim.Unstructured); ok {
@@ -1071,34 +939,21 @@ func TestReconcile(t *testing.T) {
 							xpv1.ReconcileSuccess(),
 							xpv1.Available(),
 						)
-						cr.(*composite.Unstructured).SetClaimConditionTypes(
-							// The database claim condition should exist even though it was
-							// not seen during this reconcile.
-							"DatabaseReady",
-							"BucketReady",
-						)
-						cr.SetClaimReference(&reference.Claim{})
 					})),
 				},
 				opts: []ReconcilerOption{
 					WithRecorder(newTestRecorder(
-						eventArgs{
-							Kind: compositeKind,
-							Event: event.Event{
-								Type:        event.Type(corev1.EventTypeNormal),
-								Reason:      "SelectComposition",
-								Message:     "Successfully selected composition: ",
-								Annotations: map[string]string{},
-							},
+						event.Event{
+							Type:        event.Type(corev1.EventTypeNormal),
+							Reason:      "SelectComposition",
+							Message:     "Successfully selected composition: ",
+							Annotations: map[string]string{},
 						},
-						eventArgs{
-							Kind: compositeKind,
-							Event: event.Event{
-								Type:        event.Type(corev1.EventTypeNormal),
-								Reason:      "ComposeResources",
-								Message:     "Successfully composed resources",
-								Annotations: map[string]string{},
-							},
+						event.Event{
+							Type:        event.Type(corev1.EventTypeNormal),
+							Reason:      "ComposeResources",
+							Message:     "Successfully composed resources",
+							Annotations: map[string]string{},
 						},
 					)),
 					WithCompositeFinalizer(resource.NewNopFinalizer()),
@@ -1117,31 +972,24 @@ func TestReconcile(t *testing.T) {
 						return CompositionResult{
 							Composed:          []ComposedResource{},
 							ConnectionDetails: cd,
-							Events:            []TargetedEvent{},
-							Conditions: []TargetedCondition{
+							Conditions: []xpv1.Condition{
 								// The database condition is not added to the XR again.
 								{
-									Condition: xpv1.Condition{
-										Type:               "InternalSync",
-										Status:             corev1.ConditionTrue,
-										LastTransitionTime: metav1.Time{},
-										Reason:             "SyncSuccess",
-										Message:            "This is a condition representing an internal sync process.",
-										ObservedGeneration: 0,
-									},
-									Target: CompositionTargetComposite,
+									Type:               "InternalSync",
+									Status:             corev1.ConditionTrue,
+									LastTransitionTime: metav1.Time{},
+									Reason:             "SyncSuccess",
+									Message:            "This is a condition representing an internal sync process.",
+									ObservedGeneration: 0,
 								},
 								// The bucket is now ready.
 								{
-									Condition: xpv1.Condition{
-										Type:               "BucketReady",
-										Status:             corev1.ConditionTrue,
-										LastTransitionTime: metav1.Time{},
-										Reason:             "Available",
-										Message:            "This is a condition for bucket availability.",
-										ObservedGeneration: 0,
-									},
-									Target: CompositionTargetCompositeAndClaim,
+									Type:               "BucketReady",
+									Status:             corev1.ConditionTrue,
+									LastTransitionTime: metav1.Time{},
+									Reason:             "Available",
+									Message:            "This is a condition for bucket availability.",
+									ObservedGeneration: 0,
 								},
 							},
 						}, nil
@@ -1156,46 +1004,28 @@ func TestReconcile(t *testing.T) {
 			reason: "A system condition should be updated if it is explicitly allowed to do so",
 			args: args{
 				client: &test.MockClient{
-					MockGet: test.NewMockGetFn(nil, func(obj client.Object) error {
-						if xr, ok := obj.(*composite.Unstructured); ok {
-							// non-nil claim ref to trigger claim Get()
-							xr.SetClaimReference(&reference.Claim{})
-							return nil
-						}
-						if cm, ok := obj.(*claim.Unstructured); ok {
-							claim.New(claim.WithGroupVersionKind(schema.GroupVersionKind{})).DeepCopyInto(cm)
-							return nil
-						}
-						return nil
-					}),
+					MockGet: test.NewMockGetFn(nil),
 					MockStatusUpdate: WantComposite(t, NewComposite(func(cr resource.Composite) {
 						cr.SetCompositionReference(&corev1.ObjectReference{})
 						cr.SetConditions(
 							xpv1.ReconcileSuccess(),
 							xpv1.Creating().WithMessage("Composite resource was explicitly marked as unready by the composer"),
 						)
-						cr.SetClaimReference(&reference.Claim{})
 					})),
 				},
 				opts: []ReconcilerOption{
 					WithRecorder(newTestRecorder(
-						eventArgs{
-							Kind: compositeKind,
-							Event: event.Event{
-								Type:        event.Type(corev1.EventTypeNormal),
-								Reason:      "SelectComposition",
-								Message:     "Successfully selected composition: ",
-								Annotations: map[string]string{},
-							},
+						event.Event{
+							Type:        event.Type(corev1.EventTypeNormal),
+							Reason:      "SelectComposition",
+							Message:     "Successfully selected composition: ",
+							Annotations: map[string]string{},
 						},
-						eventArgs{
-							Kind: compositeKind,
-							Event: event.Event{
-								Type:        event.Type(corev1.EventTypeNormal),
-								Reason:      "ComposeResources",
-								Message:     "Successfully composed resources",
-								Annotations: map[string]string{},
-							},
+						event.Event{
+							Type:        event.Type(corev1.EventTypeNormal),
+							Reason:      "ComposeResources",
+							Message:     "Successfully composed resources",
+							Annotations: map[string]string{},
 						},
 					)),
 					WithCompositeFinalizer(resource.NewNopFinalizer()),
@@ -1215,98 +1045,7 @@ func TestReconcile(t *testing.T) {
 							Composite: CompositeResource{
 								Ready: ptr.To(false),
 							},
-							Composed:          []ComposedResource{},
 							ConnectionDetails: cd,
-							Events:            []TargetedEvent{},
-							Conditions:        []TargetedCondition{},
-						}, nil
-					})),
-				},
-			},
-			want: want{
-				r: reconcile.Result{RequeueAfter: defaultPollInterval},
-			},
-		},
-		"CustomEventsFailToGetClaim": {
-			reason: "We should emit custom events that were returned by the composer. If we cannot get the claim, we should just emit events for the composite and continue as normal.",
-			args: args{
-				client: &test.MockClient{
-					MockGet: test.NewMockGetFn(nil, func(obj client.Object) error {
-						if xr, ok := obj.(*composite.Unstructured); ok {
-							// non-nil claim ref to trigger claim Get()
-							xr.SetClaimReference(&reference.Claim{})
-							return nil
-						}
-						if _, ok := obj.(*claim.Unstructured); ok {
-							// something went wrong when getting the claim
-							return errBoom
-						}
-						return nil
-					}),
-					MockStatusUpdate: WantComposite(t, NewComposite(func(cr resource.Composite) {
-						cr.SetCompositionReference(&corev1.ObjectReference{})
-						cr.SetConditions(xpv1.ReconcileSuccess(), xpv1.Available())
-						cr.SetClaimReference(&reference.Claim{})
-					})),
-				},
-				opts: []ReconcilerOption{
-					WithRecorder(newTestRecorder(
-						eventArgs{
-							Kind: compositeKind,
-							Event: event.Event{
-								Type:        event.Type(corev1.EventTypeNormal),
-								Reason:      "SelectComposition",
-								Message:     "Successfully selected composition: ",
-								Annotations: map[string]string{},
-							},
-						},
-						eventArgs{
-							Kind: compositeKind,
-							Event: event.Event{
-								Type:        event.TypeNormal,
-								Reason:      "DatabaseAvailable",
-								Message:     "Pipeline step \"some-function\": This is an event for database availability.",
-								Annotations: map[string]string{},
-							},
-						},
-						eventArgs{
-							Kind: compositeKind,
-							Event: event.Event{
-								Type:        event.Type(corev1.EventTypeNormal),
-								Reason:      "ComposeResources",
-								Message:     "Successfully composed resources",
-								Annotations: map[string]string{},
-							},
-						},
-					)),
-					WithCompositeFinalizer(resource.NewNopFinalizer()),
-					WithCompositionSelector(CompositionSelectorFn(func(_ context.Context, cr resource.Composite) error {
-						cr.SetCompositionReference(&corev1.ObjectReference{})
-						return nil
-					})),
-					WithCompositionRevisionFetcher(CompositionRevisionFetcherFn(func(_ context.Context, _ resource.Composite) (*v1.CompositionRevision, error) {
-						return &v1.CompositionRevision{}, nil
-					})),
-					WithCompositionRevisionValidator(CompositionRevisionValidatorFn(func(_ *v1.CompositionRevision) error { return nil })),
-					WithConfigurator(ConfiguratorFn(func(_ context.Context, _ resource.Composite, _ *v1.CompositionRevision) error {
-						return nil
-					})),
-					WithComposer(ComposerFn(func(_ context.Context, _ *composite.Unstructured, _ CompositionRequest) (CompositionResult, error) {
-						return CompositionResult{
-							Composed:          []ComposedResource{},
-							ConnectionDetails: cd,
-							Events: []TargetedEvent{
-								{
-									Event: event.Event{
-										Type:        event.TypeNormal,
-										Reason:      "DatabaseAvailable",
-										Message:     "This is an event for database availability.",
-										Annotations: map[string]string{},
-									},
-									Detail: "Pipeline step \"some-function\"",
-									Target: CompositionTargetCompositeAndClaim,
-								},
-							},
 						}, nil
 					})),
 				},
@@ -1330,7 +1069,7 @@ func TestReconcile(t *testing.T) {
 			}
 
 			if tr, ok := r.record.(*testRecorder); ok {
-				if diff := cmp.Diff(tr.Want, tr.Got, test.EquateErrors()); diff != "" {
+				if diff := cmp.Diff(tr.Want, tr.Got, test.EquateErrors(), cmpopts.EquateEmpty()); diff != "" {
 					t.Errorf("\n%s\nr.Reconcile(...): -want events, +got events:\n%s", tc.reason, diff)
 				}
 			}
@@ -1380,39 +1119,21 @@ func WantComposite(t *testing.T, want resource.Composite) func(_ context.Context
 	}
 }
 
-// Test types.
-const (
-	compositeKind = "Composite"
-	claimKind     = "Claim"
-)
-
 // testRecorder allows asserting event creation.
 type testRecorder struct {
-	Want []eventArgs
-	Got  []eventArgs
+	Want []event.Event
+	Got  []event.Event
 }
 
-type eventArgs struct {
-	Kind  string
-	Event event.Event
-}
-
-func (r *testRecorder) Event(obj runtime.Object, e event.Event) {
-	var kind string
-	switch obj.(type) {
-	case *composite.Unstructured:
-		kind = compositeKind
-	case *claim.Unstructured:
-		kind = claimKind
-	}
-	r.Got = append(r.Got, eventArgs{Kind: kind, Event: e})
+func (r *testRecorder) Event(_ runtime.Object, e event.Event) {
+	r.Got = append(r.Got, e)
 }
 
 func (r *testRecorder) WithAnnotations(_ ...string) event.Recorder {
 	return r
 }
 
-func newTestRecorder(expected ...eventArgs) *testRecorder {
+func newTestRecorder(expected ...event.Event) *testRecorder {
 	return &testRecorder{
 		Want: expected,
 	}

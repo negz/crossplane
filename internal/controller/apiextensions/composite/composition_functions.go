@@ -35,6 +35,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	xpv1 "github.com/crossplane/crossplane-runtime/apis/common/v1"
+	"github.com/crossplane/crossplane-runtime/pkg/connection/store"
 	"github.com/crossplane/crossplane-runtime/pkg/errors"
 	"github.com/crossplane/crossplane-runtime/pkg/event"
 	"github.com/crossplane/crossplane-runtime/pkg/meta"
@@ -221,7 +222,7 @@ func WithManagedFieldsUpgrader(u ManagedFieldsUpgrader) FunctionComposerOption {
 // both Patch and Transform (P&T) logic and a pipeline of Composition Functions.
 func NewFunctionComposer(kube client.Client, r FunctionRunner, o ...FunctionComposerOption) *FunctionComposer {
 	// We don't fetch connection details by default.
-	f := ConnectionDetailsFetcherFn(func(_ context.Context, _ resource.ConnectionSecretOwner) (managed.ConnectionDetails, error) {
+	f := ConnectionDetailsFetcherFn(func(_ context.Context, _ store.SecretOwner) (managed.ConnectionDetails, error) {
 		return managed.ConnectionDetails{}, nil
 	})
 
@@ -277,8 +278,8 @@ func (c *FunctionComposer) Compose(ctx context.Context, xr *composite.Unstructur
 	// The Function pipeline starts with empty desired state.
 	d := &fnv1.State{}
 
-	events := []TargetedEvent{}
-	conditions := []TargetedCondition{}
+	events := []event.Event{}
+	conditions := []xpv1.Condition{}
 
 	// The Function context always starts empty.
 	fctx := &structpb.Struct{Fields: map[string]*structpb.Value{}}
@@ -342,15 +343,12 @@ func (c *FunctionComposer) Compose(ctx context.Context, xr *composite.Unstructur
 				status = corev1.ConditionUnknown
 			}
 
-			conditions = append(conditions, TargetedCondition{
-				Condition: xpv1.Condition{
-					Type:               xpv1.ConditionType(c.GetType()),
-					Status:             status,
-					LastTransitionTime: metav1.Now(),
-					Reason:             xpv1.ConditionReason(c.GetReason()),
-					Message:            c.GetMessage(),
-				},
-				Target: convertTarget(c.GetTarget()),
+			conditions = append(conditions, xpv1.Condition{
+				Type:               xpv1.ConditionType(c.GetType()),
+				Status:             status,
+				LastTransitionTime: metav1.Now(),
+				Reason:             xpv1.ConditionReason(c.GetReason()),
+				Message:            c.GetMessage(),
 			})
 		}
 
@@ -362,27 +360,19 @@ func (c *FunctionComposer) Compose(ctx context.Context, xr *composite.Unstructur
 				reason = reasonCompose
 			}
 
-			e := TargetedEvent{Target: convertTarget(rs.GetTarget())}
-
 			switch rs.GetSeverity() {
 			case fnv1.Severity_SEVERITY_FATAL:
 				return CompositionResult{Events: events, Conditions: conditions}, errors.Errorf(errFmtFatalResult, fn.Step, rs.GetMessage())
 			case fnv1.Severity_SEVERITY_WARNING:
-				e.Event = event.Warning(reason, errors.New(rs.GetMessage()))
-				e.Detail = fmt.Sprintf("Pipeline step %q", fn.Step)
+				events = append(events, event.Warning(reason, errors.Errorf("Pipeline step %q: %s", fn.Step, rs.GetMessage())))
 			case fnv1.Severity_SEVERITY_NORMAL:
-				e.Event = event.Normal(reason, rs.GetMessage())
-				e.Detail = fmt.Sprintf("Pipeline step %q", fn.Step)
+				events = append(events, event.Normal(reason, fmt.Sprintf("Pipeline step %q: %s", fn.Step, rs.GetMessage())))
 			case fnv1.Severity_SEVERITY_UNSPECIFIED:
 				// We could hit this case if a Function was built against a newer
 				// protobuf than this build of Crossplane, and the new protobuf
 				// introduced a severity that we don't know about.
-				e.Event = event.Warning(reason, errors.Errorf("Pipeline step %q returned a result of unknown severity (assuming warning): %s", fn.Step, rs.GetMessage()))
-				// Explicitly target only the XR, since we're including information
-				// about an exceptional, unexpected state.
-				e.Target = CompositionTargetComposite
+				events = append(events, event.Warning(reason, errors.Errorf("Pipeline step %q returned a result of unknown severity (assuming warning): %s", fn.Step, rs.GetMessage())))
 			}
-			events = append(events, e)
 		}
 	}
 
@@ -511,10 +501,7 @@ func (c *FunctionComposer) Compose(ctx context.Context, xr *composite.Unstructur
 				// We mark the resource as not synced, so that once we get to
 				// decide the XR's Synced condition, we can set it to false if
 				// any of the resources didn't sync successfully.
-				events = append(events, TargetedEvent{
-					Event:  event.Warning(reasonCompose, errors.Wrapf(err, errFmtApplyCD, name)),
-					Target: CompositionTargetComposite,
-				})
+				events = append(events, event.Warning(reasonCompose, errors.Wrapf(err, errFmtApplyCD, name)))
 				// NOTE(phisco): here we behave differently w.r.t. the native
 				// p&t composer, as we respect the readiness reported by
 				// functions, while there we defaulted to also set ready false
@@ -771,8 +758,11 @@ func (d *DeletingComposedResourceGarbageCollector) GarbageCollectComposedResourc
 func UpdateResourceRefs(xr resource.ComposedResourcesReferencer, desired ComposedResourceStates) {
 	refs := make([]corev1.ObjectReference, 0, len(desired))
 	for _, dr := range desired {
-		ref := meta.ReferenceTo(dr.Resource, dr.Resource.GetObjectKind().GroupVersionKind())
-		refs = append(refs, *ref)
+		refs = append(refs, corev1.ObjectReference{
+			APIVersion: dr.Resource.GetObjectKind().GroupVersionKind().GroupVersion().String(),
+			Kind:       dr.Resource.GetObjectKind().GroupVersionKind().Kind,
+			Name:       dr.Resource.GetName(),
+		})
 	}
 
 	// We want to ensure our refs are stable.
@@ -864,11 +854,4 @@ func (u *PatchingManagedFieldsUpgrader) Upgrade(ctx context.Context, obj client.
 		]`, obj.GetResourceVersion()))
 		return errors.Wrap(resource.IgnoreNotFound(u.client.Patch(ctx, obj, client.RawPatch(types.JSONPatchType, p))), "cannot clear field managers")
 	}
-}
-
-func convertTarget(t fnv1.Target) CompositionTarget {
-	if t == fnv1.Target_TARGET_COMPOSITE_AND_CLAIM {
-		return CompositionTargetCompositeAndClaim
-	}
-	return CompositionTargetComposite
 }

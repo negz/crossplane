@@ -201,8 +201,8 @@ func (r *APILabelSelectorResolver) SelectComposition(ctx context.Context, cp res
 }
 
 // NewAPIDefaultCompositionSelector returns a APIDefaultCompositionSelector.
-func NewAPIDefaultCompositionSelector(c client.Client, ref corev1.ObjectReference, r event.Recorder) *APIDefaultCompositionSelector {
-	return &APIDefaultCompositionSelector{client: c, defRef: ref, recorder: r}
+func NewAPIDefaultCompositionSelector(c client.Client, name string, r event.Recorder) *APIDefaultCompositionSelector {
+	return &APIDefaultCompositionSelector{client: c, name: name, recorder: r}
 }
 
 // APIDefaultCompositionSelector selects the default composition referenced in
@@ -210,25 +210,25 @@ func NewAPIDefaultCompositionSelector(c client.Client, ref corev1.ObjectReferenc
 // in composite resource.
 type APIDefaultCompositionSelector struct {
 	client   client.Client
-	defRef   corev1.ObjectReference
+	name     string
 	recorder event.Recorder
 }
 
 // SelectComposition selects the default compositionif neither a reference nor
 // selector is given in composite resource.
-func (s *APIDefaultCompositionSelector) SelectComposition(ctx context.Context, cp resource.Composite) error {
-	if cp.GetCompositionReference() != nil || cp.GetCompositionSelector() != nil {
+func (s *APIDefaultCompositionSelector) SelectComposition(ctx context.Context, xr resource.Composite) error {
+	if xr.GetCompositionReference() != nil || xr.GetCompositionSelector() != nil {
 		return nil
 	}
-	def := &v1.CompositeResourceDefinition{}
-	if err := s.client.Get(ctx, meta.NamespacedNameOf(&s.defRef), def); err != nil {
+	xrd := &v1.CompositeResourceDefinition{}
+	if err := s.client.Get(ctx, types.NamespacedName{Name: s.name}, xrd); err != nil {
 		return errors.Wrap(err, errGetXRD)
 	}
-	if def.Spec.DefaultCompositionRef == nil {
+	if xrd.Spec.DefaultCompositionRef == nil {
 		return nil
 	}
-	cp.SetCompositionReference(&corev1.ObjectReference{Name: def.Spec.DefaultCompositionRef.Name})
-	s.recorder.Event(cp, event.Normal(reasonCompositionSelection, "Default composition has been selected"))
+	xr.SetCompositionReference(&corev1.ObjectReference{Name: xrd.Spec.DefaultCompositionRef.Name})
+	s.recorder.Event(xr, event.Normal(reasonCompositionSelection, "Default composition has been selected"))
 	return nil
 }
 

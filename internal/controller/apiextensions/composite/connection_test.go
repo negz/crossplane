@@ -23,9 +23,9 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 
+	"github.com/crossplane/crossplane-runtime/pkg/connection/store"
 	"github.com/crossplane/crossplane-runtime/pkg/errors"
 	"github.com/crossplane/crossplane-runtime/pkg/reconciler/managed"
-	"github.com/crossplane/crossplane-runtime/pkg/resource"
 	"github.com/crossplane/crossplane-runtime/pkg/resource/fake"
 	"github.com/crossplane/crossplane-runtime/pkg/test"
 )
@@ -37,7 +37,7 @@ func TestConnectionDetailsFetcherChain(t *testing.T) {
 
 	type args struct {
 		ctx context.Context
-		o   resource.ConnectionSecretOwner
+		o   store.SecretOwner
 	}
 	type want struct {
 		conn managed.ConnectionDetails
@@ -63,7 +63,7 @@ func TestConnectionDetailsFetcherChain(t *testing.T) {
 		"SingleFetcherChain": {
 			reason: "A chain of one fetcher should return only its connection details.",
 			c: ConnectionDetailsFetcherChain{
-				ConnectionDetailsFetcherFn(func(_ context.Context, _ resource.ConnectionSecretOwner) (managed.ConnectionDetails, error) {
+				ConnectionDetailsFetcherFn(func(_ context.Context, _ store.SecretOwner) (managed.ConnectionDetails, error) {
 					return managed.ConnectionDetails{"a": []byte("b")}, nil
 				}),
 			},
@@ -77,7 +77,7 @@ func TestConnectionDetailsFetcherChain(t *testing.T) {
 		"FetcherError": {
 			reason: "We should return errors from a chained fetcher.",
 			c: ConnectionDetailsFetcherChain{
-				ConnectionDetailsFetcherFn(func(_ context.Context, _ resource.ConnectionSecretOwner) (managed.ConnectionDetails, error) {
+				ConnectionDetailsFetcherFn(func(_ context.Context, _ store.SecretOwner) (managed.ConnectionDetails, error) {
 					return nil, errBoom
 				}),
 			},
@@ -91,14 +91,14 @@ func TestConnectionDetailsFetcherChain(t *testing.T) {
 		"MultipleFetcherChain": {
 			reason: "A chain of multiple fetchers should return all of their connection details, with later fetchers winning if there are duplicates.",
 			c: ConnectionDetailsFetcherChain{
-				ConnectionDetailsFetcherFn(func(_ context.Context, _ resource.ConnectionSecretOwner) (managed.ConnectionDetails, error) {
+				ConnectionDetailsFetcherFn(func(_ context.Context, _ store.SecretOwner) (managed.ConnectionDetails, error) {
 					return managed.ConnectionDetails{
 						"a": []byte("a"),
 						"b": []byte("b"),
 						"c": []byte("c"),
 					}, nil
 				}),
-				ConnectionDetailsFetcherFn(func(_ context.Context, _ resource.ConnectionSecretOwner) (managed.ConnectionDetails, error) {
+				ConnectionDetailsFetcherFn(func(_ context.Context, _ store.SecretOwner) (managed.ConnectionDetails, error) {
 					return managed.ConnectionDetails{
 						"a": []byte("A"),
 					}, nil

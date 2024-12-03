@@ -37,6 +37,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	"github.com/crossplane/crossplane-runtime/pkg/connection"
+	"github.com/crossplane/crossplane-runtime/pkg/connection/store"
 	"github.com/crossplane/crossplane-runtime/pkg/controller"
 	"github.com/crossplane/crossplane-runtime/pkg/errors"
 	"github.com/crossplane/crossplane-runtime/pkg/event"
@@ -168,7 +169,7 @@ func Setup(mgr ctrl.Manager, o apiextensionscontroller.Options) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		Named(name).
 		For(&v1.CompositeResourceDefinition{}).
-		Owns(&extv1.CustomResourceDefinition{}, builder.WithPredicates(resource.NewPredicates(IsCompositeResourceCRD()))).
+		Owns(&extv1.CustomResourceDefinition{}, builder.WithPredicates(IsCompositeResourceCRD())).
 		WithOptions(o.ForControllerRuntime()).
 		Complete(ratelimiter.NewReconciler(name, errors.WithSilentRequeueOnConflict(r), o.GlobalRateLimiter))
 }
@@ -533,15 +534,15 @@ func (r *Reconciler) CompositeReconcilerOptions(ctx context.Context, d *v1.Compo
 	// If TLS isn't configured for ESS we default to no support for connection
 	// details.
 	// TODO(negz): Do we need TLS for basic built-in Kubernetes secret support?
-	var fetcher managed.ConnectionDetailsFetcher = composite.ConnectionDetailsFetcherFn(func(_ context.Context, _ resource.ConnectionSecretOwner) (managed.ConnectionDetails, error) {
+	var fetcher managed.ConnectionDetailsFetcher = composite.ConnectionDetailsFetcherFn(func(_ context.Context, _ store.SecretOwner) (managed.ConnectionDetails, error) {
 		return managed.ConnectionDetails{}, nil
 	})
 
 	var pub managed.ConnectionPublisher = managed.ConnectionPublisherFns{
-		PublishConnectionFn: func(_ context.Context, _ resource.ConnectionSecretOwner, _ managed.ConnectionDetails) (bool, error) {
+		PublishConnectionFn: func(_ context.Context, _ store.SecretOwner, _ managed.ConnectionDetails) (bool, error) {
 			return false, nil
 		},
-		UnpublishConnectionFn: func(_ context.Context, _ resource.ConnectionSecretOwner, _ managed.ConnectionDetails) error {
+		UnpublishConnectionFn: func(_ context.Context, _ store.SecretOwner, _ managed.ConnectionDetails) error {
 			return nil
 		},
 	}
@@ -568,10 +569,10 @@ func (r *Reconciler) CompositeReconcilerOptions(ctx context.Context, d *v1.Compo
 			composite.WithComposedResourceObserver(composite.NewExistingComposedResourceObserver(r.engine.GetClient(), fetcher)),
 			composite.WithCompositeConnectionDetailsFetcher(fetcher),
 		)),
-		composite.WithConnectionPublishers(pub),
+		composite.WithConnectionPublisher(pub),
 		composite.WithCompositionSelector(composite.NewCompositionSelectorChain(
 			composite.NewEnforcedCompositionSelector(*d, r.record),
-			composite.NewAPIDefaultCompositionSelector(r.engine.GetClient(), *meta.ReferenceTo(d, v1.CompositeResourceDefinitionGroupVersionKind), r.record),
+			composite.NewAPIDefaultCompositionSelector(r.engine.GetClient(), d.GetName(), r.record),
 			composite.NewAPILabelSelectorResolver(r.engine.GetClient()),
 		)),
 		composite.WithLogger(r.log.WithValues("controller", composite.ControllerName(d.GetName()))),

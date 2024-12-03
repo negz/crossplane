@@ -21,14 +21,15 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	extv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
-	"k8s.io/apimachinery/pkg/runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/event"
 
 	v1 "github.com/crossplane/crossplane/apis/apiextensions/v1"
 )
 
 func TestIsCompositeResourceCRD(t *testing.T) {
 	cases := map[string]struct {
-		obj  runtime.Object
+		obj  client.Object
 		want bool
 	}{
 		"NotCRD": {
@@ -76,7 +77,7 @@ func TestIsCompositeResourceCRD(t *testing.T) {
 
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
-			got := IsCompositeResourceCRD()(tc.obj)
+			got := IsCompositeResourceCRD().GenericFunc(event.GenericEvent{Object: tc.obj})
 			if diff := cmp.Diff(tc.want, got); diff != "" {
 				t.Errorf("\n%s\nIsCompositeResourceCRD(...): -want, +got:\n%s", name, diff)
 			}
