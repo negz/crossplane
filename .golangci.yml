@@ -102,6 +102,9 @@ linters:
     # numbers, but we should not be strict about it.
     - mnd
 
+    # TODO(negz): DO NOT MERGE
+    - gomoddirectives
+
 linters-settings:
   errcheck:
     # report about not checking of errors in type assetions: `a := b.(MyStruct)`;

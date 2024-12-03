@@ -2,6 +2,8 @@ module github.com/crossplane/crossplane
 
 go 1.22.8
 
+replace github.com/crossplane/crossplane-runtime => github.com/negz/crossplane-runtime v0.0.0-20241123014607-fd8432f51ab1
+
 require (
 	github.com/AdaLogics/go-fuzz-headers v0.0.0-20230811130428-ced1acdcaa24
 	github.com/Masterminds/semver v1.5.0
