@@ -115,7 +115,6 @@ type startCommand struct {
 	EnableSignatureVerification     bool `group:"Alpha Features:" help:"Enable support for package signature verification via ImageConfig API."`
 
 	EnableCompositionWebhookSchemaValidation bool `default:"true" group:"Beta Features:" help:"Enable support for Composition validation using schemas."`
-	EnableDeploymentRuntimeConfigs           bool `default:"true" group:"Beta Features:" help:"Enable support for Deployment Runtime Configs."`
 }
 
 // Run core Crossplane controllers.
@@ -236,10 +235,6 @@ func (c *startCommand) Run(s *runtime.Scheme, log logging.Logger) error { //noli
 	if c.EnableRealtimeCompositions {
 		o.Features.Enable(features.EnableAlphaRealtimeCompositions)
 		log.Info("Alpha feature enabled", "flag", features.EnableAlphaRealtimeCompositions)
-	}
-	if c.EnableDeploymentRuntimeConfigs {
-		o.Features.Enable(features.EnableBetaDeploymentRuntimeConfigs)
-		log.Info("Beta feature enabled", "flag", features.EnableBetaDeploymentRuntimeConfigs)
 	}
 	if c.EnableDependencyVersionUpgrades {
 		o.Features.Enable(features.EnableAlphaDependencyVersionUpgrades)

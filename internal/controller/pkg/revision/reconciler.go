@@ -314,7 +314,6 @@ func SetupProviderRevision(mgr ctrl.Manager, o controller.Options) error {
 		Owns(&corev1.Service{}).
 		Owns(&corev1.Secret{}).
 		Owns(&corev1.ServiceAccount{}).
-		Watches(&v1beta1.DeploymentRuntimeConfig{}, &EnqueueRequestForReferencingProviderRevisions{client: mgr.GetClient()}).
 		Watches(&v1beta1.ImageConfig{}, enqueueProviderRevisionsForImageConfig(mgr.GetClient(), log))
 
 	ro := []ReconcilerOption{
@@ -335,12 +334,7 @@ func SetupProviderRevision(mgr ctrl.Manager, o controller.Options) error {
 
 	if o.PackageRuntime == controller.PackageRuntimeDeployment {
 		ro = append(ro, WithRuntimeHooks(NewProviderHooks(mgr.GetClient(), o.DefaultRegistry)))
-
-		if o.Features.Enabled(features.EnableBetaDeploymentRuntimeConfigs) {
-			cb = cb.Watches(&v1beta1.DeploymentRuntimeConfig{}, &EnqueueRequestForReferencingProviderRevisions{
-				client: mgr.GetClient(),
-			})
-		}
+		cb = cb.Watches(&v1beta1.DeploymentRuntimeConfig{}, &EnqueueRequestForReferencingProviderRevisions{client: mgr.GetClient()})
 	}
 
 	return cb.WithOptions(o.ForControllerRuntime()).
@@ -426,7 +420,6 @@ func SetupFunctionRevision(mgr ctrl.Manager, o controller.Options) error {
 		Owns(&corev1.Service{}).
 		Owns(&corev1.Secret{}).
 		Owns(&corev1.ServiceAccount{}).
-		Watches(&v1beta1.DeploymentRuntimeConfig{}, &EnqueueRequestForReferencingFunctionRevisions{client: mgr.GetClient()}).
 		Watches(&v1beta1.ImageConfig{}, enqueueFunctionRevisionsForImageConfig(mgr.GetClient(), log))
 
 	ro := []ReconcilerOption{
@@ -447,12 +440,7 @@ func SetupFunctionRevision(mgr ctrl.Manager, o controller.Options) error {
 
 	if o.PackageRuntime == controller.PackageRuntimeDeployment {
 		ro = append(ro, WithRuntimeHooks(NewFunctionHooks(mgr.GetClient(), o.DefaultRegistry)))
-
-		if o.Features.Enabled(features.EnableBetaDeploymentRuntimeConfigs) {
-			cb = cb.Watches(&v1beta1.DeploymentRuntimeConfig{}, &EnqueueRequestForReferencingFunctionRevisions{
-				client: mgr.GetClient(),
-			})
-		}
+		cb = cb.Watches(&v1beta1.DeploymentRuntimeConfig{}, &EnqueueRequestForReferencingFunctionRevisions{client: mgr.GetClient()})
 	}
 
 	return cb.WithOptions(o.ForControllerRuntime()).
@@ -955,18 +943,16 @@ func (r *Reconciler) deactivateRevision(ctx context.Context, pr v1.PackageRevisi
 func (r *Reconciler) runtimeManifestBuilderOptions(ctx context.Context, pwr v1.PackageRevisionWithRuntime) ([]RuntimeManifestBuilderOption, error) {
 	var opts []RuntimeManifestBuilderOption
 
-	if r.features.Enabled(features.EnableBetaDeploymentRuntimeConfigs) {
-		rcRef := pwr.GetRuntimeConfigRef()
-		if rcRef == nil {
-			return nil, errors.New(errNoRuntimeConfig)
-		}
-
-		rc := &v1beta1.DeploymentRuntimeConfig{}
-		if err := r.client.Get(ctx, types.NamespacedName{Name: rcRef.Name}, rc); err != nil {
-			return nil, errors.Wrap(err, errGetRuntimeConfig)
-		}
-		opts = append(opts, RuntimeManifestBuilderWithRuntimeConfig(rc))
+	rcRef := pwr.GetRuntimeConfigRef()
+	if rcRef == nil {
+		return nil, errors.New(errNoRuntimeConfig)
 	}
+
+	rc := &v1beta1.DeploymentRuntimeConfig{}
+	if err := r.client.Get(ctx, types.NamespacedName{Name: rcRef.Name}, rc); err != nil {
+		return nil, errors.Wrap(err, errGetRuntimeConfig)
+	}
+	opts = append(opts, RuntimeManifestBuilderWithRuntimeConfig(rc))
 
 	sa := &corev1.ServiceAccount{}
 	// Fetch XP ServiceAccount to get the ImagePullSecrets defined there.
