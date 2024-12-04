@@ -35,17 +35,11 @@ func (c *Composition) Hash() string {
 		return "unknown"
 	}
 
-	a, err := yaml.Marshal(c.ObjectMeta.Annotations)
-	if err != nil {
-		return "unknown"
-	}
-
 	s, err := yaml.Marshal(c.Spec)
 	if err != nil {
 		return "unknown"
 	}
 
-	y = append(y, a...)
 	y = append(y, s...)
 	_, _ = h.Write(y)
 	return fmt.Sprintf("%x", h.Sum(nil))
