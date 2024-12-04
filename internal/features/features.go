@@ -26,11 +26,6 @@ const (
 	// https://github.com/crossplane/crossplane/blob/19ea23/design/one-pager-generic-usage-type.md
 	EnableAlphaUsages feature.Flag = "EnableAlphaUsages"
 
-	// EnableAlphaRealtimeCompositions enables alpha support for realtime
-	// compositions, i.e. watching MRs and reconciling compositions immediately
-	// when any MR is updated.
-	EnableAlphaRealtimeCompositions feature.Flag = "EnableAlphaRealtimeCompositions"
-
 	// EnableAlphaDependencyVersionUpgrades enables alpha support for upgrading the version of a package's dependencies
 	// when needed.
 	EnableAlphaDependencyVersionUpgrades feature.Flag = "EnableAlphaDependencyVersionUpgrades"

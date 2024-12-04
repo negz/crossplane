@@ -20,7 +20,6 @@ package composite
 import (
 	"context"
 	"fmt"
-	"math/rand"
 	"strconv"
 	"time"
 
@@ -48,9 +47,8 @@ import (
 )
 
 const (
-	timeout             = 2 * time.Minute
-	defaultPollInterval = 1 * time.Minute
-	finalizer           = "composite.apiextensions.crossplane.io"
+	timeout   = 2 * time.Minute
+	finalizer = "composite.apiextensions.crossplane.io"
 )
 
 // Error strings.
@@ -195,31 +193,6 @@ func WithRecorder(er event.Recorder) ReconcilerOption {
 	return func(r *Reconciler) {
 		r.record = er
 	}
-}
-
-// A PollIntervalHook determines how frequently the XR should poll its composed
-// resources.
-type PollIntervalHook func(ctx context.Context, xr *composite.Unstructured) time.Duration
-
-// WithPollIntervalHook specifies how to determine how long the Reconciler
-// should wait before queueing a new reconciliation after a successful
-// reconcile.
-func WithPollIntervalHook(h PollIntervalHook) ReconcilerOption {
-	return func(r *Reconciler) {
-		r.pollInterval = h
-	}
-}
-
-// WithPollInterval specifies how long the Reconciler should wait before
-// queueing a new reconciliation after a successful reconcile. The Reconciler
-// uses the interval jittered +/- 10% when all composed resources are ready. It
-// polls twice as frequently (i.e. at half the supplied interval) +/- 10% when
-// waiting for composed resources to become ready.
-func WithPollInterval(interval time.Duration) ReconcilerOption {
-	return WithPollIntervalHook(func(_ context.Context, _ *composite.Unstructured) time.Duration {
-		// Jitter the poll interval +/- 10%.
-		return interval + time.Duration((rand.Float64()-0.5)*2*(float64(interval)*0.1)) //nolint:gosec // No need for secure randomness
-	})
 }
 
 // WithCompositionRevisionFetcher specifies how the composition to be used should be
@@ -380,8 +353,6 @@ func NewReconciler(c client.Client, of resource.CompositeKind, opts ...Reconcile
 
 		log:    logging.NewNopLogger(),
 		record: event.NewNopRecorder(),
-
-		pollInterval: func(_ context.Context, _ *composite.Unstructured) time.Duration { return defaultPollInterval },
 	}
 
 	for _, f := range opts {
@@ -409,8 +380,6 @@ type Reconciler struct {
 
 	log    logging.Logger
 	record event.Recorder
-
-	pollInterval PollIntervalHook
 }
 
 // Reconcile a composite resource.
@@ -634,10 +603,9 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 		return reconcile.Result{Requeue: true}, errors.Wrap(r.client.Status().Update(ctx, xr), errUpdateStatus)
 	}
 
-	// We requeue after our poll interval because we can't watch composed
-	// resources - we can't know what type of resources we might compose
-	// when this controller is started.
-	return reconcile.Result{RequeueAfter: r.pollInterval(ctx, xr)}, errors.Wrap(r.client.Status().Update(ctx, xr), errUpdateStatus)
+	// No need to explicitly requeue, because we're watching all composed
+	// resources.
+	return reconcile.Result{Requeue: false}, errors.Wrap(r.client.Status().Update(ctx, xr), errUpdateStatus)
 }
 
 // updateXRConditions updates the conditions of the supplied composite resource

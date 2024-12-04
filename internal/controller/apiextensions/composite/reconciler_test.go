@@ -404,7 +404,7 @@ func TestReconcile(t *testing.T) {
 				},
 			},
 			want: want{
-				r: reconcile.Result{RequeueAfter: defaultPollInterval},
+				r: reconcile.Result{Requeue: false},
 			},
 		},
 		"ComposedResourcesNotReady": {
@@ -533,7 +533,7 @@ func TestReconcile(t *testing.T) {
 				},
 			},
 			want: want{
-				r: reconcile.Result{RequeueAfter: defaultPollInterval},
+				r: reconcile.Result{Requeue: false},
 			},
 		},
 		"ReconciliationPausedSuccessful": {
@@ -607,7 +607,7 @@ func TestReconcile(t *testing.T) {
 				},
 			},
 			want: want{
-				r: reconcile.Result{RequeueAfter: defaultPollInterval},
+				r: reconcile.Result{Requeue: false},
 			},
 		},
 		"ReconciliationResumesAfterAnnotationRemoval": {
@@ -650,7 +650,7 @@ func TestReconcile(t *testing.T) {
 				},
 			},
 			want: want{
-				r: reconcile.Result{RequeueAfter: defaultPollInterval},
+				r: reconcile.Result{Requeue: false},
 			},
 		},
 		"CustomEventsAndConditions": {
@@ -756,7 +756,7 @@ func TestReconcile(t *testing.T) {
 				},
 			},
 			want: want{
-				r: reconcile.Result{RequeueAfter: defaultPollInterval},
+				r: reconcile.Result{Requeue: false},
 			},
 		},
 		"CustomEventsAndConditionFatal": {
@@ -997,7 +997,7 @@ func TestReconcile(t *testing.T) {
 				},
 			},
 			want: want{
-				r: reconcile.Result{RequeueAfter: defaultPollInterval},
+				r: reconcile.Result{Requeue: false},
 			},
 		},
 		"SystemConditionUpdate": {
@@ -1051,7 +1051,7 @@ func TestReconcile(t *testing.T) {
 				},
 			},
 			want: want{
-				r: reconcile.Result{RequeueAfter: defaultPollInterval},
+				r: reconcile.Result{Requeue: false},
 			},
 		},
 	}

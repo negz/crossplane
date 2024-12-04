@@ -86,6 +86,16 @@ func (m *MockEngine) GetFieldIndexer() client.FieldIndexer {
 	return m.MockGetFieldIndexer()
 }
 
+var _ client.FieldIndexer = &MockFieldIndexer{}
+
+type MockFieldIndexer struct {
+	err error
+}
+
+func (i *MockFieldIndexer) IndexField(_ context.Context, _ client.Object, _ string, _ client.IndexerFunc) error {
+	return i.err
+}
+
 func TestReconcile(t *testing.T) {
 	errBoom := errors.New("boom")
 	now := metav1.Now()
@@ -689,6 +699,9 @@ func TestReconcile(t *testing.T) {
 							return errBoom
 						},
 						MockGetClient: func() client.Client { return test.NewMockClient() },
+						MockGetFieldIndexer: func() client.FieldIndexer {
+							return &MockFieldIndexer{}
+						},
 					}),
 				},
 			},
@@ -730,6 +743,9 @@ func TestReconcile(t *testing.T) {
 							return errBoom
 						},
 						MockGetClient: func() client.Client { return test.NewMockClient() },
+						MockGetFieldIndexer: func() client.FieldIndexer {
+							return &MockFieldIndexer{}
+						},
 					}),
 				},
 			},
@@ -772,10 +788,11 @@ func TestReconcile(t *testing.T) {
 						return nil
 					}}),
 					WithControllerEngine(&MockEngine{
-						MockIsRunning:    func(_ string) bool { return false },
-						MockStart:        func(_ string, _ ...engine.ControllerOption) error { return nil },
-						MockStartWatches: func(_ string, _ ...engine.Watch) error { return nil },
-						MockGetClient:    func() client.Client { return test.NewMockClient() },
+						MockIsRunning:       func(_ string) bool { return false },
+						MockStart:           func(_ string, _ ...engine.ControllerOption) error { return nil },
+						MockStartWatches:    func(_ string, _ ...engine.Watch) error { return nil },
+						MockGetClient:       func() client.Client { return test.NewMockClient() },
+						MockGetFieldIndexer: func() client.FieldIndexer { return &MockFieldIndexer{} },
 					}),
 				},
 			},
@@ -830,11 +847,12 @@ func TestReconcile(t *testing.T) {
 						return nil
 					}}),
 					WithControllerEngine(&MockEngine{
-						MockStart:        func(_ string, _ ...engine.ControllerOption) error { return nil },
-						MockStop:         func(_ context.Context, _ string) error { return nil },
-						MockIsRunning:    func(_ string) bool { return false },
-						MockStartWatches: func(_ string, _ ...engine.Watch) error { return nil },
-						MockGetClient:    func() client.Client { return test.NewMockClient() },
+						MockStart:           func(_ string, _ ...engine.ControllerOption) error { return nil },
+						MockStop:            func(_ context.Context, _ string) error { return nil },
+						MockIsRunning:       func(_ string) bool { return false },
+						MockStartWatches:    func(_ string, _ ...engine.Watch) error { return nil },
+						MockGetClient:       func() client.Client { return test.NewMockClient() },
+						MockGetFieldIndexer: func() client.FieldIndexer { return &MockFieldIndexer{} },
 					}),
 				},
 			},

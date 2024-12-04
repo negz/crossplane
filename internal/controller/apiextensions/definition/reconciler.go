@@ -53,7 +53,6 @@ import (
 	"github.com/crossplane/crossplane/internal/controller/apiextensions/composite/watch"
 	apiextensionscontroller "github.com/crossplane/crossplane/internal/controller/apiextensions/controller"
 	"github.com/crossplane/crossplane/internal/engine"
-	"github.com/crossplane/crossplane/internal/features"
 	"github.com/crossplane/crossplane/internal/xcrd"
 )
 
@@ -488,13 +487,10 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 	// TODO(negz): Update CompositeReconcilerOptions to produce
 	// ControllerOptions instead? It bothers me that this is the only feature
 	// flagged block outside that method.
-	co := []engine.ControllerOption{engine.WithRuntimeOptions(ko)}
-	if r.options.Features.Enabled(features.EnableAlphaRealtimeCompositions) {
-		// If realtime composition is enabled we'll start watches dynamically,
-		// so we want to garbage collect watches for composed resource kinds
-		// that aren't used anymore.
-		gc := watch.NewGarbageCollector(name, resource.CompositeKind(xrGVK), r.engine, watch.WithLogger(log))
-		co = append(co, engine.WithWatchGarbageCollector(gc))
+	gc := watch.NewGarbageCollector(name, resource.CompositeKind(xrGVK), r.engine, watch.WithLogger(log))
+	co := []engine.ControllerOption{
+		engine.WithRuntimeOptions(ko),
+		engine.WithWatchGarbageCollector(gc),
 	}
 
 	if err := r.engine.Start(name, co...); err != nil {
@@ -559,6 +555,18 @@ func (r *Reconciler) CompositeReconcilerOptions(ctx context.Context, d *v1.Compo
 	// extra resources to satisfy function requirements.
 	runner := composite.NewFetchingFunctionRunner(r.options.FunctionRunner, composite.NewExistingExtraResourcesFetcher(r.engine.GetClient()))
 
+	gvk := d.GetCompositeGroupVersionKind()
+	u := &kunstructured.Unstructured{}
+	u.SetAPIVersion(gvk.GroupVersion().String())
+	u.SetKind(gvk.Kind)
+
+	// Add an index to the controller engine's client.
+	if err := r.engine.GetFieldIndexer().IndexField(ctx, u, compositeResourcesRefsIndex, IndexCompositeResourcesRefs); err != nil {
+		r.log.Debug(errAddIndex, "error", err)
+	}
+
+	h := EnqueueCompositeResources(resource.CompositeKind(d.GetCompositeGroupVersionKind()), r.engine.GetClient(), r.log)
+
 	// The default set of reconciler options when no feature flags are enabled.
 	o := []composite.ReconcilerOption{
 		composite.WithConfigurator(composite.NewConfiguratorChain(
@@ -577,24 +585,7 @@ func (r *Reconciler) CompositeReconcilerOptions(ctx context.Context, d *v1.Compo
 		)),
 		composite.WithLogger(r.log.WithValues("controller", composite.ControllerName(d.GetName()))),
 		composite.WithRecorder(r.record.WithAnnotations("controller", composite.ControllerName(d.GetName()))),
-		composite.WithPollInterval(r.options.PollInterval),
-	}
-
-	// If realtime compositions are enabled we pass the ControllerEngine to the
-	// XR reconciler so that it can start watches for composed resources.
-	if r.options.Features.Enabled(features.EnableAlphaRealtimeCompositions) {
-		gvk := d.GetCompositeGroupVersionKind()
-		u := &kunstructured.Unstructured{}
-		u.SetAPIVersion(gvk.GroupVersion().String())
-		u.SetKind(gvk.Kind)
-
-		// Add an index to the controller engine's client.
-		if err := r.engine.GetFieldIndexer().IndexField(ctx, u, compositeResourcesRefsIndex, IndexCompositeResourcesRefs); err != nil {
-			r.log.Debug(errAddIndex, "error", err)
-		}
-
-		h := EnqueueCompositeResources(resource.CompositeKind(d.GetCompositeGroupVersionKind()), r.engine.GetClient(), r.log)
-		o = append(o, composite.WithWatchStarter(composite.ControllerName(d.GetName()), h, r.engine))
+		composite.WithWatchStarter(composite.ControllerName(d.GetName()), h, r.engine),
 	}
 
 	return o

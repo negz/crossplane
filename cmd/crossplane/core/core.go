@@ -110,7 +110,6 @@ type startCommand struct {
 	TLSClientCertsDir   string `env:"TLS_CLIENT_CERTS_DIR"   help:"The path of the folder which will store TLS client certificate of Crossplane."`
 
 	EnableUsages                    bool `group:"Alpha Features:" help:"Enable support for deletion ordering and resource protection with Usages."`
-	EnableRealtimeCompositions      bool `group:"Alpha Features:" help:"Enable support for realtime compositions, i.e. watching composed resources and reconciling compositions immediately when any of the composed resources is updated."`
 	EnableDependencyVersionUpgrades bool `group:"Alpha Features:" help:"Enable support for upgrading dependency versions when the parent package is updated."`
 	EnableSignatureVerification     bool `group:"Alpha Features:" help:"Enable support for package signature verification via ImageConfig API."`
 
@@ -231,10 +230,6 @@ func (c *startCommand) Run(s *runtime.Scheme, log logging.Logger) error { //noli
 	if c.EnableUsages {
 		o.Features.Enable(features.EnableAlphaUsages)
 		log.Info("Alpha feature enabled", "flag", features.EnableAlphaUsages)
-	}
-	if c.EnableRealtimeCompositions {
-		o.Features.Enable(features.EnableAlphaRealtimeCompositions)
-		log.Info("Alpha feature enabled", "flag", features.EnableAlphaRealtimeCompositions)
 	}
 	if c.EnableDependencyVersionUpgrades {
 		o.Features.Enable(features.EnableAlphaDependencyVersionUpgrades)
