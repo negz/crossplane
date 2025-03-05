@@ -14,13 +14,13 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package resource
+package xresource
 
 import (
-	"github.com/crossplane/crossplane/internal/resource/fake"
-	"github.com/crossplane/crossplane/internal/resource/unstructured/claim"
-	"github.com/crossplane/crossplane/internal/resource/unstructured/composed"
-	"github.com/crossplane/crossplane/internal/resource/unstructured/composite"
+	"github.com/crossplane/crossplane/internal/xresource/fake"
+	"github.com/crossplane/crossplane/internal/xresource/unstructured/claim"
+	"github.com/crossplane/crossplane/internal/xresource/unstructured/composed"
+	"github.com/crossplane/crossplane/internal/xresource/unstructured/composite"
 )
 
 // We test that our fakes satisfy our interfaces here rather than in the fake
