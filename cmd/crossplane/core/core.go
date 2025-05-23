@@ -21,8 +21,6 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
-	"github.com/crossplane/crossplane/internal/controller/daytwo"
-	daytwocontroller "github.com/crossplane/crossplane/internal/controller/daytwo/controller"
 	"io"
 	"os"
 	"path/filepath"
@@ -52,6 +50,8 @@ import (
 
 	"github.com/crossplane/crossplane/internal/controller/apiextensions"
 	apiextensionscontroller "github.com/crossplane/crossplane/internal/controller/apiextensions/controller"
+	"github.com/crossplane/crossplane/internal/controller/daytwo"
+	daytwocontroller "github.com/crossplane/crossplane/internal/controller/daytwo/controller"
 	"github.com/crossplane/crossplane/internal/controller/pkg"
 	pkgcontroller "github.com/crossplane/crossplane/internal/controller/pkg/controller"
 	"github.com/crossplane/crossplane/internal/engine"
@@ -439,6 +439,7 @@ func (c *startCommand) Run(s *runtime.Scheme, log logging.Logger) error { //noli
 		FunctionRunner: functionRunner,
 	}
 	if err := daytwo.Setup(mgr, d2o); err != nil {
+		return errors.Wrap(err, "cannot add day two controllers to manager")
 	}
 
 	// Registering webhooks with the manager is what actually starts the webhook

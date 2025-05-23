@@ -36,7 +36,6 @@ import (
 
 	fnv1 "github.com/crossplane/crossplane/apis/apiextensions/fn/proto/v1"
 	fnv1beta1 "github.com/crossplane/crossplane/apis/apiextensions/fn/proto/v1beta1"
-	d2v1alpha1 "github.com/crossplane/crossplane/apis/daytwo/fn/proto/v1alpha1"
 	pkgv1 "github.com/crossplane/crossplane/apis/pkg/v1"
 )
 
@@ -150,22 +149,6 @@ func (r *PackagedFunctionRunner) RunFunction(ctx context.Context, name string, r
 	}
 
 	rsp, err := NewBetaFallBackFunctionRunnerServiceClient(conn).RunFunction(ctx, req)
-	return rsp, errors.Wrapf(err, errFmtRunFunction, name)
-}
-
-// RunOperation sends the supplied RunFunctionRequest to the named Function. The
-// function is expected to be an installed Operation.pkg.crossplane.io package.
-func (r *PackagedFunctionRunner) RunOperation(ctx context.Context, name string, req *d2v1alpha1.RunFunctionRequest) (*d2v1alpha1.RunFunctionResponse, error) {
-	conn, err := r.getClientConn(ctx, fmt.Sprintf("op#%s", name))
-	if err != nil {
-		return nil, errors.Wrapf(err, errFmtGetClientConn, name)
-	}
-
-	// This context is used for actually making the request.
-	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
-	defer cancel()
-
-	rsp, err := d2v1alpha1.NewFunctionRunnerServiceClient(conn).RunFunction(ctx, req)
 	return rsp, errors.Wrapf(err, errFmtRunFunction, name)
 }
 

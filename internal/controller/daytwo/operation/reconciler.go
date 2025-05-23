@@ -42,7 +42,7 @@ import (
 	"github.com/crossplane/crossplane-runtime/pkg/ratelimiter"
 	"github.com/crossplane/crossplane-runtime/pkg/resource"
 
-	d2v1alpha1 "github.com/crossplane/crossplane/apis/daytwo/fn/proto/v1alpha1"
+	fnv1 "github.com/crossplane/crossplane/apis/apiextensions/fn/proto/v1"
 	"github.com/crossplane/crossplane/apis/daytwo/v1alpha1"
 	daytwocontroller "github.com/crossplane/crossplane/internal/controller/daytwo/controller"
 )
@@ -71,28 +71,28 @@ func Setup(mgr ctrl.Manager, o daytwocontroller.Options) error {
 
 // A FunctionRunner runs a single operation function.
 type FunctionRunner interface {
-	// RunOperation runs the named operation function.
-	RunOperation(ctx context.Context, name string, req *d2v1alpha1.RunFunctionRequest) (*d2v1alpha1.RunFunctionResponse, error)
+	// RunFunction runs the named operation function.
+	RunFunction(ctx context.Context, name string, req *fnv1.RunFunctionRequest) (*fnv1.RunFunctionResponse, error)
 }
 
 // A FunctionRunnerFn is a function that can run an operation function.
-type FunctionRunnerFn func(ctx context.Context, name string, req *d2v1alpha1.RunFunctionRequest) (*d2v1alpha1.RunFunctionResponse, error)
+type FunctionRunnerFn func(ctx context.Context, name string, req *fnv1.RunFunctionRequest) (*fnv1.RunFunctionResponse, error)
 
 // RunFunction runs the named Composition Function with the supplied request.
-func (fn FunctionRunnerFn) RunFunction(ctx context.Context, name string, req *d2v1alpha1.RunFunctionRequest) (*d2v1alpha1.RunFunctionResponse, error) {
+func (fn FunctionRunnerFn) RunFunction(ctx context.Context, name string, req *fnv1.RunFunctionRequest) (*fnv1.RunFunctionResponse, error) {
 	return fn(ctx, name, req)
 }
 
 // A ExtraResourcesFetcher gets extra resources matching a selector.
 type ExtraResourcesFetcher interface {
-	Fetch(ctx context.Context, rs *d2v1alpha1.ResourceSelector) (*d2v1alpha1.Resources, error)
+	Fetch(ctx context.Context, rs *fnv1.ResourceSelector) (*fnv1.Resources, error)
 }
 
 // An ExtraResourcesFetcherFn gets extra resources matching the selector.
-type ExtraResourcesFetcherFn func(ctx context.Context, rs *d2v1alpha1.ResourceSelector) (*d2v1alpha1.Resources, error)
+type ExtraResourcesFetcherFn func(ctx context.Context, rs *fnv1.ResourceSelector) (*fnv1.Resources, error)
 
 // Fetch gets extra resources matching the selector.
-func (fn ExtraResourcesFetcherFn) Fetch(ctx context.Context, rs *d2v1alpha1.ResourceSelector) (*d2v1alpha1.Resources, error) {
+func (fn ExtraResourcesFetcherFn) Fetch(ctx context.Context, rs *fnv1.ResourceSelector) (*fnv1.Resources, error) {
 	return fn(ctx, rs)
 }
 
@@ -194,7 +194,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 	}
 
 	// The function pipeline starts with empty desired state.
-	d := &d2v1alpha1.State{}
+	d := &fnv1.State{}
 
 	// The function context starts empty.
 	fctx := &structpb.Struct{Fields: map[string]*structpb.Value{}}
@@ -205,7 +205,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 	for _, fn := range op.Spec.Pipeline {
 		log = log.WithValues("step", fn.Step)
 
-		req := &d2v1alpha1.RunFunctionRequest{Desired: d, Context: fctx}
+		req := &fnv1.RunFunctionRequest{Desired: d, Context: fctx}
 
 		if fn.Input != nil {
 			in := &structpb.Struct{}
@@ -221,10 +221,10 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 		}
 
 		// Used to store the requirements returned at the previous iteration.
-		var reqs *d2v1alpha1.Requirements
+		var reqs *fnv1.Requirements
 
 		// Used to store the response of the function at the previous iteration.
-		var rsp *d2v1alpha1.RunFunctionResponse
+		var rsp *fnv1.RunFunctionResponse
 
 		for i := int64(0); i <= MaxRequirementsIterations; i++ {
 			if i == MaxRequirementsIterations {
@@ -235,7 +235,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 
 			// TODO(negz): Generate a content-addressable tag for this request.
 			// Perhaps using https://github.com/cerbos/protoc-gen-go-hashpb ?
-			rsp, err := r.pipeline.RunOperation(ctx, fn.FunctionRef.Name, req)
+			rsp, err := r.pipeline.RunFunction(ctx, fn.FunctionRef.Name, req)
 			if err != nil {
 				log.Debug("Cannot run operation pipeline step", "error", err)
 				op.Status.Failures++
@@ -251,7 +251,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 			reqs = rsp.GetRequirements()
 
 			// Cleanup the extra resources from the previous iteration.
-			req.ExtraResources = make(map[string]*d2v1alpha1.Resources)
+			req.ExtraResources = make(map[string]*fnv1.Resources)
 
 			// Fetch the requested resources and add them to the desired state.
 			for name, selector := range reqs.GetExtraResources() {
@@ -281,15 +281,15 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 		// emitted as events.
 		for _, rs := range rsp.GetResults() {
 			switch rs.GetSeverity() {
-			case d2v1alpha1.Severity_SEVERITY_FATAL:
+			case fnv1.Severity_SEVERITY_FATAL:
 				log.Debug("Pipeline step returned a fatal result", "error", rs.GetMessage())
 				op.Status.Failures++
 				return reconcile.Result{}, errors.Wrap(r.client.Status().Update(ctx, op), "cannot update Operation status")
-			case d2v1alpha1.Severity_SEVERITY_WARNING:
+			case fnv1.Severity_SEVERITY_WARNING:
 				r.record.Event(op, event.Warning("RunPipelineStep", errors.Errorf("Pipeline step %q: %s", fn.Step, rs.GetMessage())))
-			case d2v1alpha1.Severity_SEVERITY_NORMAL:
+			case fnv1.Severity_SEVERITY_NORMAL:
 				r.record.Event(op, event.Normal("RunPipelineStep", fmt.Sprintf("Pipeline step %q: %s", fn.Step, rs.GetMessage())))
-			case d2v1alpha1.Severity_SEVERITY_UNSPECIFIED:
+			case fnv1.Severity_SEVERITY_UNSPECIFIED:
 				// We could hit this case if a Function was built against a newer
 				// protobuf than this build of Crossplane, and the new protobuf
 				// introduced a severity that we don't know about.
@@ -331,13 +331,13 @@ func NewExistingExtraResourcesFetcher(c client.Reader) *ExistingExtraResourcesFe
 }
 
 // Fetch fetches resources requested by functions using the provided client.Reader.
-func (e *ExistingExtraResourcesFetcher) Fetch(ctx context.Context, rs *d2v1alpha1.ResourceSelector) (*d2v1alpha1.Resources, error) {
+func (e *ExistingExtraResourcesFetcher) Fetch(ctx context.Context, rs *fnv1.ResourceSelector) (*fnv1.Resources, error) {
 	if rs == nil {
 		return nil, errors.New("resource selector must not be nil")
 	}
 
 	switch match := rs.GetMatch().(type) {
-	case *d2v1alpha1.ResourceSelector_MatchName:
+	case *fnv1.ResourceSelector_MatchName:
 		// Fetch a single resource.
 		r := &unstructured.Unstructured{}
 		r.SetAPIVersion(rs.GetApiVersion())
@@ -357,9 +357,9 @@ func (e *ExistingExtraResourcesFetcher) Fetch(ctx context.Context, rs *d2v1alpha
 		if err != nil {
 			return nil, errors.Wrap(err, "cannot convert extra resource to protobuf Struct")
 		}
-		return &d2v1alpha1.Resources{Items: []*d2v1alpha1.Resource{{Resource: o}}}, nil
+		return &fnv1.Resources{Items: []*fnv1.Resource{{Resource: o}}}, nil
 
-	case *d2v1alpha1.ResourceSelector_MatchLabels:
+	case *fnv1.ResourceSelector_MatchLabels:
 		// Fetch a list of resources.
 		list := &unstructured.UnstructuredList{}
 		list.SetAPIVersion(rs.GetApiVersion())
@@ -369,16 +369,16 @@ func (e *ExistingExtraResourcesFetcher) Fetch(ctx context.Context, rs *d2v1alpha
 			return nil, errors.Wrap(err, "cannot list extra resources")
 		}
 
-		rs := make([]*d2v1alpha1.Resource, len(list.Items))
+		rs := make([]*fnv1.Resource, len(list.Items))
 		for i := range list.Items {
 			o, err := AsStruct(&list.Items[i])
 			if err != nil {
 				return nil, errors.Wrap(err, "cannot convert extra resource to protobuf Struct")
 			}
-			rs[i] = &d2v1alpha1.Resource{Resource: o}
+			rs[i] = &fnv1.Resource{Resource: o}
 		}
 
-		return &d2v1alpha1.Resources{Items: rs}, nil
+		return &fnv1.Resources{Items: rs}, nil
 	}
 
 	return nil, errors.New("unsupported resource selector type")
