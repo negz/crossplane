@@ -329,6 +329,15 @@ spec:
                   - verbs
                   type: object
                 type: array
+              type:
+                description: |-
+                  Type of this function.
+                  A Composition function can only be used in Composition pipelines.
+                  An Operation function can only be used in Operation pipelines.
+                enum:
+                - Composition
+                - Operation
+                type: string
             type: object
         type: object
     served: true
@@ -647,6 +656,15 @@ spec:
                   - verbs
                   type: object
                 type: array
+              type:
+                description: |-
+                  Type of this function.
+                  A Composition function can only be used in Composition pipelines.
+                  An Operation function can only be used in Operation pipelines.
+                enum:
+                - Composition
+                - Operation
+                type: string
             type: object
         type: object
     served: true
