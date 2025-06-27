@@ -77,33 +77,6 @@ func BaseProps() *extv1.JSONSchemaProps {
 // that Crossplane expects to be present for all defined composite resources.
 func CompositeResourceSpecProps(s v1.CompositeResourceScope, defaultPol *xpv1.UpdatePolicy) map[string]extv1.JSONSchemaProps {
 	props := map[string]extv1.JSONSchemaProps{
-		"compositionRef": {
-			Type:     "object",
-			Required: []string{"name"},
-			Properties: map[string]extv1.JSONSchemaProps{
-				"name": {Type: "string"},
-			},
-		},
-		"compositionSelector": {
-			Type:     "object",
-			Required: []string{"matchLabels"},
-			Properties: map[string]extv1.JSONSchemaProps{
-				"matchLabels": {
-					Type: "object",
-					AdditionalProperties: &extv1.JSONSchemaPropsOrBool{
-						Allows: true,
-						Schema: &extv1.JSONSchemaProps{Type: "string"},
-					},
-				},
-			},
-		},
-		"compositionRevisionRef": {
-			Type:     "object",
-			Required: []string{"name"},
-			Properties: map[string]extv1.JSONSchemaProps{
-				"name": {Type: "string"},
-			},
-		},
 		"compositionRevisionSelector": {
 			Type:     "object",
 			Required: []string{"matchLabels"},
@@ -173,6 +146,34 @@ func CompositeResourceSpecProps(s v1.CompositeResourceScope, defaultPol *xpv1.Up
 	// Legacy XRs have their Crossplane machinery fields directly under spec.
 	// They also support referencing a claim, and writing a secret.
 	if s == v1.CompositeResourceScopeLegacyCluster {
+		props["compositionRef"] = extv1.JSONSchemaProps{
+			Type:     "object",
+			Required: []string{"name"},
+			Properties: map[string]extv1.JSONSchemaProps{
+				"name": {Type: "string"},
+			},
+		}
+		props["compositionSelector"] = extv1.JSONSchemaProps{
+			Type:     "object",
+			Required: []string{"matchLabels"},
+			Properties: map[string]extv1.JSONSchemaProps{
+				"matchLabels": {
+					Type: "object",
+					AdditionalProperties: &extv1.JSONSchemaPropsOrBool{
+						Allows: true,
+						Schema: &extv1.JSONSchemaProps{Type: "string"},
+					},
+				},
+			},
+		}
+		props["compositionRevisionRef"] = extv1.JSONSchemaProps{
+			Type:     "object",
+			Required: []string{"name"},
+			Properties: map[string]extv1.JSONSchemaProps{
+				"name": {Type: "string"},
+			},
+		}
+
 		props["claimRef"] = extv1.JSONSchemaProps{
 			Type:     "object",
 			Required: []string{"apiVersion", "kind", "namespace", "name"},

@@ -4,6 +4,8 @@ go 1.23.8
 
 toolchain go1.23.10
 
+replace github.com/crossplane/crossplane-runtime => github.com/negz/crossplane-runtime v0.0.0-20250627002330-469834333314
+
 require (
 	dario.cat/mergo v1.0.2
 	github.com/AdaLogics/go-fuzz-headers v0.0.0-20230811130428-ced1acdcaa24

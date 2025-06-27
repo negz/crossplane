@@ -18,6 +18,7 @@ package composition
 
 import (
 	"fmt"
+	"maps"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
@@ -29,6 +30,9 @@ import (
 // NewCompositionRevision creates a new revision of the supplied Composition.
 func NewCompositionRevision(c *v1.Composition, revision int64) *v1.CompositionRevision {
 	hash := c.Hash()
+
+	// We cannot have a label value longer than 63 chars
+	// https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#syntax-and-character-set
 	if len(hash) >= 63 {
 		hash = hash[0:63]
 	}
@@ -43,20 +47,15 @@ func NewCompositionRevision(c *v1.Composition, revision int64) *v1.CompositionRe
 			Name: fmt.Sprintf("%s-%s", c.GetName(), nameSuffix),
 			Labels: map[string]string{
 				v1.LabelCompositionName: c.GetName(),
-				// We cannot have a label value longer than 63 chars
-				// https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#syntax-and-character-set
 				v1.LabelCompositionHash: hash,
 			},
 		},
 		Spec: NewCompositionRevisionSpec(c.Spec, revision),
 	}
+	maps.Copy(cr.Labels, c.GetLabels())
 
 	ref := meta.TypedReferenceTo(c, v1.CompositionGroupVersionKind)
 	meta.AddOwnerReference(cr, meta.AsController(ref))
-
-	for k, v := range c.GetLabels() {
-		cr.ObjectMeta.Labels[k] = v
-	}
 
 	return cr
 }

@@ -107,19 +107,6 @@ type ConnectionSecretFilterer interface {
 	GetConnectionSecretKeys() []string
 }
 
-// A CompositionSelector selects a composition reference.
-type CompositionSelector interface {
-	SelectComposition(ctx context.Context, cr resource.Composite) error
-}
-
-// A CompositionSelectorFn selects a composition reference.
-type CompositionSelectorFn func(ctx context.Context, cr resource.Composite) error
-
-// SelectComposition for the supplied composite resource.
-func (fn CompositionSelectorFn) SelectComposition(ctx context.Context, cr resource.Composite) error {
-	return fn(ctx, cr)
-}
-
 // A ConnectionPublisher publishes the supplied ConnectionDetails for the
 // supplied resource.
 type ConnectionPublisher interface {
@@ -303,7 +290,7 @@ func WithPollInterval(interval time.Duration) ReconcilerOption {
 // fetched.
 func WithCompositionRevisionFetcher(f CompositionRevisionFetcher) ReconcilerOption {
 	return func(r *Reconciler) {
-		r.revision.CompositionRevisionFetcher = f
+		r.revision = f
 	}
 }
 
@@ -314,14 +301,6 @@ func WithCompositionRevisionFetcher(f CompositionRevisionFetcher) ReconcilerOpti
 func WithCompositeFinalizer(f resource.Finalizer) ReconcilerOption {
 	return func(r *Reconciler) {
 		r.composite.Finalizer = f
-	}
-}
-
-// WithCompositionSelector specifies how the composition to be used should be
-// selected.
-func WithCompositionSelector(s CompositionSelector) ReconcilerOption {
-	return func(r *Reconciler) {
-		r.composite.CompositionSelector = s
 	}
 }
 
@@ -366,10 +345,6 @@ func WithCompositeSchema(s composite.Schema) ReconcilerOption {
 	}
 }
 
-type revision struct {
-	CompositionRevisionFetcher
-}
-
 // A WatchStarter can start a new watch. XR controllers use this to dynamically
 // start watches when they compose new kinds of resources.
 type WatchStarter interface {
@@ -395,7 +370,6 @@ func (fn WatchStarterFn) StartWatches(ctx context.Context, name string, ws ...en
 
 type compositeResource struct {
 	resource.Finalizer
-	CompositionSelector
 	Configurator
 	ConnectionPublisher
 }
@@ -407,14 +381,12 @@ func NewReconciler(cached client.Client, of schema.GroupVersionKind, opts ...Rec
 
 		gvk: of,
 
-		revision: revision{
-			CompositionRevisionFetcher: NewAPIRevisionFetcher(resource.ClientApplicator{Client: cached, Applicator: resource.NewAPIPatchingApplicator(cached)}),
-		},
+		// TODO(negz): Pass in XRD.
+		revision: NewRevisionFetcher(cached, nil),
 
 		composite: compositeResource{
-			Finalizer:           resource.NewAPIFinalizer(cached, finalizer),
-			CompositionSelector: NewAPILabelSelectorResolver(cached),
-			Configurator:        NewConfiguratorChain(NewAPINamingConfigurator(cached), NewAPIConfigurator(cached)),
+			Finalizer:    resource.NewAPIFinalizer(cached, finalizer),
+			Configurator: NewConfiguratorChain(NewAPINamingConfigurator(cached), NewAPIConfigurator(cached)),
 
 			// Modern v2 XRs don't support connection details, but
 			// legacy v1 XRs do. Publishing is disabled by default.
@@ -455,7 +427,7 @@ type Reconciler struct {
 
 	features *feature.Flags
 
-	revision  revision
+	revision  CompositionRevisionFetcher
 	composite compositeResource
 
 	resource Composer
@@ -533,22 +505,10 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 		return reconcile.Result{Requeue: true}, errors.Wrap(r.client.Status().Update(ctx, xr), errUpdateStatus)
 	}
 
-	orig := xr.GetCompositionReference()
-	if err := r.composite.SelectComposition(ctx, xr); err != nil {
-		if kerrors.IsConflict(err) {
-			return reconcile.Result{Requeue: true}, nil
-		}
-		err = errors.Wrap(err, errSelectComp)
-		r.record.Event(xr, event.Warning(reasonResolve, err))
-		status.MarkConditions(xpv1.ReconcileError(err))
-		return reconcile.Result{Requeue: true}, errors.Wrap(r.client.Status().Update(ctx, xr), errUpdateStatus)
-	}
-	if compRef := xr.GetCompositionReference(); compRef != nil && (orig == nil || *compRef != *orig) {
-		r.record.Event(xr, event.Normal(reasonResolve, fmt.Sprintf("Successfully selected composition: %s", compRef.Name)))
-	}
+	// TODO(negz): Do we still want to emit an event when the revision
+	// changes?
 
-	// Select (if there is a new one) and fetch the composition revision.
-	origRev := xr.GetCompositionRevisionReference()
+	// Select and fetch a composition revision.
 	rev, err := r.revision.Fetch(ctx, xr)
 	if err != nil {
 		if kerrors.IsConflict(err) {
@@ -559,9 +519,6 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 		r.record.Event(xr, event.Warning(reasonCompose, err))
 		status.MarkConditions(xpv1.ReconcileError(err))
 		return reconcile.Result{Requeue: true}, errors.Wrap(r.client.Status().Update(ctx, xr), errUpdateStatus)
-	}
-	if rev := xr.GetCompositionRevisionReference(); rev != nil && (origRev == nil || *rev != *origRev) {
-		r.record.Event(xr, event.Normal(reasonResolve, fmt.Sprintf("Selected composition revision: %s", rev.Name)))
 	}
 
 	if err := r.composite.Configure(ctx, xr, rev); err != nil {
