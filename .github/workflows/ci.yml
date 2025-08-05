@@ -305,18 +305,23 @@ jobs:
           elif [[ "${GITHUB_BASE_REF}" == release-* ]]; then
             VERSION=${GITHUB_BASE_REF#release-}
           fi
-          # Extract the major and minor parts of the version
-          MAJOR=$(echo "$VERSION" | cut -d. -f1)
-          MINOR=$(echo "$VERSION" | cut -d. -f2)
-          # Decrement the MINOR version
-          if [[ "$MINOR" -gt 0 ]]; then
-            MINOR=$((MINOR - 1))
-          else
-            echo "Error: Minor version cannot be decremented below 0"
+          # Find the previous version using git tags (stable releases only)
+          CURRENT_VERSION="v$VERSION"
+          # Get all stable version tags (no pre-release suffixes), sort them, find the one immediately before current
+          PRIOR_VERSION=$(git tag -l 'v*.*' | \
+            grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | \
+            sort -V | \
+            grep -B1 "^$CURRENT_VERSION$" | \
+            head -1)
+          
+          if [[ -z "$PRIOR_VERSION" ]]; then
+            echo "Error: Could not find a prior version before $CURRENT_VERSION"
             exit 1
           fi
-
-          echo "CROSSPLANE_PRIOR_VERSION=$MAJOR.$MINOR" >> $GITHUB_ENV
+          
+          # Remove the 'v' prefix for the environment variable
+          PRIOR_VERSION_NO_V=${PRIOR_VERSION#v}
+          echo "CROSSPLANE_PRIOR_VERSION=$PRIOR_VERSION_NO_V" >> $GITHUB_ENV
 
       - name: Run E2E Tests
         uses: nick-fields/retry@ce71cc2ab81d554ebbe88c79ab5975992d79ba08 # v3
