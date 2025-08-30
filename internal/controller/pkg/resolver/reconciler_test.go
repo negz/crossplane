@@ -345,7 +345,8 @@ func TestReconcile(t *testing.T) {
 							MockInit: func(_ []dag.Node) ([]dag.Node, error) {
 								return []dag.Node{
 									&v1beta1.Dependency{
-										Package: "not.a.valid.package",
+										Package:         "not.a.valid.package",
+										ResolvedPackage: "not.a.valid.package",
 									},
 								}, nil
 							},
@@ -390,8 +391,9 @@ func TestReconcile(t *testing.T) {
 							MockInit: func(_ []dag.Node) ([]dag.Node, error) {
 								return []dag.Node{
 									&v1beta1.Dependency{
-										Package:     "registry1.com/acme-co/configuration-foo",
-										Constraints: "v0.0.1",
+										Package:         "registry1.com/acme-co/configuration-foo",
+										ResolvedPackage: "registry1.com/acme-co/configuration-foo",
+										Constraints:     "v0.0.1",
 									},
 								}, nil
 							},
@@ -442,8 +444,9 @@ func TestReconcile(t *testing.T) {
 							MockInit: func(_ []dag.Node) ([]dag.Node, error) {
 								return []dag.Node{
 									&v1beta1.Dependency{
-										Package:     "registry1.com/acme-co/configuration-foo",
-										Constraints: "v0.0.1",
+										Package:         "registry1.com/acme-co/configuration-foo",
+										ResolvedPackage: "registry1.com/acme-co/configuration-foo",
+										Constraints:     "v0.0.1",
 									},
 								}, nil
 							},
@@ -494,8 +497,9 @@ func TestReconcile(t *testing.T) {
 							MockInit: func(_ []dag.Node) ([]dag.Node, error) {
 								return []dag.Node{
 									&v1beta1.Dependency{
-										Package:     "registry1.com/acme-co/configuration-foo",
-										Constraints: "v0.0.1",
+										Package:         "registry1.com/acme-co/configuration-foo",
+										ResolvedPackage: "registry1.com/acme-co/configuration-foo",
+										Constraints:     "v0.0.1",
 									},
 								}, nil
 							},
@@ -546,8 +550,9 @@ func TestReconcile(t *testing.T) {
 							MockInit: func(_ []dag.Node) ([]dag.Node, error) {
 								return []dag.Node{
 									&v1beta1.Dependency{
-										Package:     "hasheddan/config-nop-b",
-										Constraints: "*",
+										Package:         "hasheddan/config-nop-b",
+										ResolvedPackage: "hasheddan/config-nop-b",
+										Constraints:     "*",
 									},
 								}, nil
 							},
@@ -598,8 +603,9 @@ func TestReconcile(t *testing.T) {
 							MockInit: func(_ []dag.Node) ([]dag.Node, error) {
 								return []dag.Node{
 									&v1beta1.Dependency{
-										Package:     "hasheddan/config-nop-b",
-										Constraints: ">v1.0.0",
+										Package:         "hasheddan/config-nop-b",
+										ResolvedPackage: "hasheddan/config-nop-b",
+										Constraints:     ">v1.0.0",
 									},
 								}, nil
 							},
@@ -651,9 +657,10 @@ func TestReconcile(t *testing.T) {
 							MockInit: func(_ []dag.Node) ([]dag.Node, error) {
 								return []dag.Node{
 									&v1beta1.Dependency{
-										Package:     "xpkg.crossplane.io/hasheddan/config-nop-c",
-										Constraints: ">v1.0.0",
-										Type:        ptr.To(v1beta1.ConfigurationPackageType),
+										Package:         "xpkg.crossplane.io/hasheddan/config-nop-c",
+										ResolvedPackage: "xpkg.crossplane.io/hasheddan/config-nop-c",
+										Constraints:     ">v1.0.0",
+										Type:            ptr.To(v1beta1.ConfigurationPackageType),
 									},
 								}, nil
 							},
@@ -705,9 +712,10 @@ func TestReconcile(t *testing.T) {
 							MockInit: func(_ []dag.Node) ([]dag.Node, error) {
 								return []dag.Node{
 									&v1beta1.Dependency{
-										Package:     "xpkg.crossplane.io/hasheddan/config-nop-c",
-										Constraints: "sha256:ecc25c121431dfc7058754427f97c034ecde26d4aafa0da16d258090e0443904",
-										Type:        ptr.To(v1beta1.ConfigurationPackageType),
+										Package:         "xpkg.crossplane.io/hasheddan/config-nop-c",
+										ResolvedPackage: "xpkg.crossplane.io/hasheddan/config-nop-c",
+										Constraints:     "sha256:ecc25c121431dfc7058754427f97c034ecde26d4aafa0da16d258090e0443904",
+										Type:            ptr.To(v1beta1.ConfigurationPackageType),
 									},
 								}, nil
 							},
@@ -759,9 +767,10 @@ func TestReconcile(t *testing.T) {
 							MockInit: func(_ []dag.Node) ([]dag.Node, error) {
 								return []dag.Node{
 									&v1beta1.Dependency{
-										Package:     "xpkg.crossplane.io/hasheddan/config-nop-c",
-										Constraints: ">v1.0.0",
-										Type:        ptr.To(v1beta1.ConfigurationPackageType),
+										Package:         "xpkg.crossplane.io/hasheddan/config-nop-c",
+										ResolvedPackage: "xpkg.crossplane.io/hasheddan/config-nop-c",
+										Constraints:     ">v1.0.0",
+										Type:            ptr.To(v1beta1.ConfigurationPackageType),
 									},
 								}, nil
 							},
@@ -813,9 +822,10 @@ func TestReconcile(t *testing.T) {
 							MockInit: func(_ []dag.Node) ([]dag.Node, error) {
 								return []dag.Node{
 									&v1beta1.Dependency{
-										Package:     "xpkg.crossplane.io/hasheddan/config-nop-c",
-										Constraints: ">v1.0.0",
-										Type:        ptr.To(v1beta1.ConfigurationPackageType),
+										Package:         "xpkg.crossplane.io/hasheddan/config-nop-c",
+										ResolvedPackage: "xpkg.crossplane.io/hasheddan/config-nop-c",
+										Constraints:     ">v1.0.0",
+										Type:            ptr.To(v1beta1.ConfigurationPackageType),
 									},
 								}, nil
 							},
@@ -1218,7 +1228,8 @@ func TestReconcilerFindDependencyVersionToUpgrade(t *testing.T) {
 				mgr:    &fake.Manager{Client: test.NewMockClient()},
 				insVer: "v0.0.1",
 				dep: &v1beta1.Dependency{
-					Package: "xpkg.crossplane.io/cool-repo/cool-image",
+					Package:         "xpkg.crossplane.io/cool-repo/cool-image",
+					ResolvedPackage: "xpkg.crossplane.io/cool-repo/cool-image",
 					ParentConstraints: []string{
 						digest1,
 						digest1,
@@ -1235,7 +1246,8 @@ func TestReconcilerFindDependencyVersionToUpgrade(t *testing.T) {
 				mgr:    &fake.Manager{Client: test.NewMockClient()},
 				insVer: "v0.0.1",
 				dep: &v1beta1.Dependency{
-					Package: "xpkg.crossplane.io/cool-repo/cool-image",
+					Package:         "xpkg.crossplane.io/cool-repo/cool-image",
+					ResolvedPackage: "xpkg.crossplane.io/cool-repo/cool-image",
 					ParentConstraints: []string{
 						digest1,
 						"v0.0.1",
@@ -1252,7 +1264,8 @@ func TestReconcilerFindDependencyVersionToUpgrade(t *testing.T) {
 				mgr:    &fake.Manager{Client: test.NewMockClient()},
 				insVer: "v1.0.0",
 				dep: &v1beta1.Dependency{
-					Package: "xpkg.crossplane.io/cool-repo/cool-image",
+					Package:         "xpkg.crossplane.io/cool-repo/cool-image",
+					ResolvedPackage: "xpkg.crossplane.io/cool-repo/cool-image",
 					ParentConstraints: []string{
 						">=v1.0.0",
 						"v2.0.0",
@@ -1278,7 +1291,8 @@ func TestReconcilerFindDependencyVersionToUpgrade(t *testing.T) {
 				mgr:    &fake.Manager{Client: test.NewMockClient()},
 				insVer: "v1.0.0",
 				dep: &v1beta1.Dependency{
-					Package: "xpkg.crossplane.io/cool-repo/cool-image",
+					Package:         "xpkg.crossplane.io/cool-repo/cool-image",
+					ResolvedPackage: "xpkg.crossplane.io/cool-repo/cool-image",
 					ParentConstraints: []string{
 						">=v1.0.0",
 						"v2.0.0",
@@ -1304,7 +1318,8 @@ func TestReconcilerFindDependencyVersionToUpgrade(t *testing.T) {
 				mgr:    &fake.Manager{Client: test.NewMockClient()},
 				insVer: "v1.0.0",
 				dep: &v1beta1.Dependency{
-					Package: "xpkg.crossplane.io/cool-repo/cool-image",
+					Package:         "xpkg.crossplane.io/cool-repo/cool-image",
+					ResolvedPackage: "xpkg.crossplane.io/cool-repo/cool-image",
 					ParentConstraints: []string{
 						"<=v1.0.0",
 						"v0.0.1",
@@ -1330,7 +1345,8 @@ func TestReconcilerFindDependencyVersionToUpgrade(t *testing.T) {
 				mgr:    &fake.Manager{Client: test.NewMockClient()},
 				insVer: "v2.0.0",
 				dep: &v1beta1.Dependency{
-					Package: "xpkg.crossplane.io/cool-repo/cool-image",
+					Package:         "xpkg.crossplane.io/cool-repo/cool-image",
+					ResolvedPackage: "xpkg.crossplane.io/cool-repo/cool-image",
 					ParentConstraints: []string{
 						">v2.0.0",
 						"<=v3.0.0",
@@ -1357,7 +1373,8 @@ func TestReconcilerFindDependencyVersionToUpgrade(t *testing.T) {
 				mgr:    &fake.Manager{Client: test.NewMockClient()},
 				insVer: "v3.0.0",
 				dep: &v1beta1.Dependency{
-					Package: "xpkg.crossplane.io/cool-repo/cool-image",
+					Package:         "xpkg.crossplane.io/cool-repo/cool-image",
+					ResolvedPackage: "xpkg.crossplane.io/cool-repo/cool-image",
 					ParentConstraints: []string{
 						">=v0.0.1",
 						"<v3.0.0",

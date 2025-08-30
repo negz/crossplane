@@ -196,6 +196,7 @@ func Setup(mgr ctrl.Manager, o controller.Options) error {
 		// ImageConfig. However, this is a bit more complex than needed, and we
 		// don't expect to have many ImageConfigs so we just enqueue for all
 		// ImageConfigs with a pull secret.
+		// TODO(negz): What about ImageConfigs with e.g. rewritePrefix?
 		Watches(&v1beta1.ImageConfig{}, handler.EnqueueRequestsFromMapFunc(ForName(lockName, HasPullSecret()))).
 		WithOptions(o.ForControllerRuntime()).
 		Complete(ratelimiter.NewReconciler(name, errors.WithSilentRequeueOnConflict(NewReconciler(mgr, opts...)), o.GlobalRateLimiter))

@@ -64,6 +64,12 @@ type LockPackage struct {
 	// Version is the tag or digest of the OCI image.
 	Version string `json:"version"`
 
+	// ResolvedSource is the OCI image name with tag or digest after applying
+	// ImageConfig rewrites. If no ImageConfig applies, this will be the same
+	// as Source:Version.
+	// +optional
+	ResolvedSource string `json:"resolvedSource,omitempty"`
+
 	// Dependencies are the list of dependencies of this package. The order of
 	// the dependencies will dictate the order in which they are resolved.
 	Dependencies []Dependency `json:"dependencies"`
@@ -82,9 +88,9 @@ func ToNodes(pkgs ...LockPackage) []dag.Node {
 	return nodes
 }
 
-// Identifier returns the source of a LockPackage.
+// Identifier returns the resolved source of a LockPackage.
 func (l *LockPackage) Identifier() string {
-	return l.Source
+	return l.ResolvedSource
 }
 
 // GetConstraints returns the version of a LockPackage.
@@ -150,13 +156,19 @@ type Dependency struct {
 	// dependency version.
 	Constraints string `json:"constraints"`
 
+	// ResolvedPackage is the OCI image name with tag or digest that actually
+	// satisfies this dependency after applying ImageConfig rewrites. This should
+	// match the ResolvedSource of an existing package in the Lock.
+	// +optional
+	ResolvedPackage string `json:"resolvedPackage,omitempty"`
+
 	// ParentConstraints is a list of constraints that are passed down from the parent package to the dependency.
 	ParentConstraints []string `json:"-"` // NOTE(ezgidemirel): We don't want to expose this field in the API.
 }
 
-// Identifier returns a dependency's source.
+// Identifier returns a dependency's resolved source.
 func (d *Dependency) Identifier() string {
-	return d.Package
+	return d.ResolvedPackage
 }
 
 // GetConstraints returns a dependency's constrain.

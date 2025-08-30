@@ -36,6 +36,7 @@ import (
 	"github.com/crossplane/crossplane/v2/apis/pkg/v1beta1"
 	"github.com/crossplane/crossplane/v2/internal/dag"
 	dagfake "github.com/crossplane/crossplane/v2/internal/dag/fake"
+	xpkgfake "github.com/crossplane/crossplane/v2/internal/xpkg/fake"
 )
 
 var _ DependencyManager = &PackageDependencyManager{}
@@ -82,6 +83,9 @@ func TestResolve(t *testing.T) {
 					client: &test.MockClient{
 						MockGet: test.NewMockGetFn(errBoom),
 					},
+					config: &xpkgfake.MockConfigStore{
+						MockRewritePath: xpkgfake.NewMockRewritePathFn("", "", nil),
+					},
 					log: logging.NewNopLogger(),
 				},
 				meta: &pkgmetav1.Configuration{},
@@ -102,6 +106,9 @@ func TestResolve(t *testing.T) {
 					client: &test.MockClient{
 						MockGet:    test.NewMockGetFn(kerrors.NewNotFound(schema.GroupResource{}, "")),
 						MockCreate: test.NewMockCreateFn(errBoom),
+					},
+					config: &xpkgfake.MockConfigStore{
+						MockRewritePath: xpkgfake.NewMockRewritePathFn("", "", nil),
 					},
 					log: logging.NewNopLogger(),
 				},
@@ -131,6 +138,9 @@ func TestResolve(t *testing.T) {
 							},
 						}
 					},
+					config: &xpkgfake.MockConfigStore{
+						MockRewritePath: xpkgfake.NewMockRewritePathFn("", "", nil),
+					},
 					log: logging.NewNopLogger(),
 				},
 				meta: &pkgmetav1.Configuration{},
@@ -153,8 +163,9 @@ func TestResolve(t *testing.T) {
 							l := obj.(*v1beta1.Lock)
 							l.Packages = []v1beta1.LockPackage{
 								{
-									Name:   "config-nop-a-abc123",
-									Source: "xpkg.crossplane.io/hasheddan/config-nop-a",
+									Name:           "config-nop-a-abc123",
+									Source:         "xpkg.crossplane.io/hasheddan/config-nop-a",
+									ResolvedSource: "xpkg.crossplane.io/hasheddan/config-nop-a",
 								},
 							}
 							return nil
@@ -169,6 +180,9 @@ func TestResolve(t *testing.T) {
 								return nil, nil
 							},
 						}
+					},
+					config: &xpkgfake.MockConfigStore{
+						MockRewritePath: xpkgfake.NewMockRewritePathFn("", "", nil),
 					},
 					log: logging.NewNopLogger(),
 				},
@@ -208,6 +222,9 @@ func TestResolve(t *testing.T) {
 							},
 							MockAddOrUpdateNodes: func(_ ...dag.Node) {},
 						}
+					},
+					config: &xpkgfake.MockConfigStore{
+						MockRewritePath: xpkgfake.NewMockRewritePathFn("", "", nil),
 					},
 					log: logging.NewNopLogger(),
 				},
@@ -250,25 +267,30 @@ func TestResolve(t *testing.T) {
 							l := obj.(*v1beta1.Lock)
 							l.Packages = []v1beta1.LockPackage{
 								{
-									Name:   "config-nop-a-abc123",
-									Source: "xpkg.crossplane.io/hasheddan/config-nop-a",
+									Name:           "config-nop-a-abc123",
+									Source:         "xpkg.crossplane.io/hasheddan/config-nop-a",
+									ResolvedSource: "xpkg.crossplane.io/hasheddan/config-nop-a",
 									Dependencies: []v1beta1.Dependency{
 										{
-											Package: "not-here-1",
-											Type:    ptr.To(v1beta1.ProviderPackageType),
+											Package:         "not-here-1",
+											ResolvedPackage: "not-here-1",
+											Type:            ptr.To(v1beta1.ProviderPackageType),
 										},
 										{
-											Package: "not-here-2",
-											Type:    ptr.To(v1beta1.ConfigurationPackageType),
+											Package:         "not-here-2",
+											ResolvedPackage: "not-here-2",
+											Type:            ptr.To(v1beta1.ConfigurationPackageType),
 										},
 									},
 								},
 								{
-									Source: "not-here-1",
+									Source:         "not-here-1",
+									ResolvedSource: "not-here-1",
 									Dependencies: []v1beta1.Dependency{
 										{
-											Package: "not-here-3",
-											Type:    ptr.To(v1beta1.ProviderPackageType),
+											Package:         "not-here-3",
+											ResolvedPackage: "not-here-3",
+											Type:            ptr.To(v1beta1.ProviderPackageType),
 										},
 									},
 								},
@@ -282,10 +304,12 @@ func TestResolve(t *testing.T) {
 							MockInit: func(_ []dag.Node) ([]dag.Node, error) {
 								return []dag.Node{
 									&v1beta1.Dependency{
-										Package: "not-here-2",
+										Package:         "not-here-2",
+										ResolvedPackage: "not-here-2",
 									},
 									&v1beta1.Dependency{
-										Package: "not-here-3",
+										Package:         "not-here-3",
+										ResolvedPackage: "not-here-3",
 									},
 								}, nil
 							},
@@ -297,6 +321,9 @@ func TestResolve(t *testing.T) {
 								}, nil
 							},
 						}
+					},
+					config: &xpkgfake.MockConfigStore{
+						MockRewritePath: xpkgfake.NewMockRewritePathFn("", "", nil),
 					},
 					log: logging.NewNopLogger(),
 				},
@@ -339,16 +366,19 @@ func TestResolve(t *testing.T) {
 							l := obj.(*v1beta1.Lock)
 							l.Packages = []v1beta1.LockPackage{
 								{
-									Name:   "config-nop-a-abc123",
-									Source: "xpkg.crossplane.io/hasheddan/config-nop-a",
+									Name:           "config-nop-a-abc123",
+									Source:         "xpkg.crossplane.io/hasheddan/config-nop-a",
+									ResolvedSource: "xpkg.crossplane.io/hasheddan/config-nop-a",
 									Dependencies: []v1beta1.Dependency{
 										{
-											Package: "not-here-1",
-											Type:    ptr.To(v1beta1.ProviderPackageType),
+											Package:         "not-here-1",
+											ResolvedPackage: "not-here-1",
+											Type:            ptr.To(v1beta1.ProviderPackageType),
 										},
 										{
-											Package: "not-here-2",
-											Type:    ptr.To(v1beta1.ConfigurationPackageType),
+											Package:         "not-here-2",
+											ResolvedPackage: "not-here-2",
+											Type:            ptr.To(v1beta1.ConfigurationPackageType),
 										},
 									},
 								},
@@ -356,8 +386,9 @@ func TestResolve(t *testing.T) {
 									Source: "not-here-1",
 									Dependencies: []v1beta1.Dependency{
 										{
-											Package: "not-here-3",
-											Type:    ptr.To(v1beta1.ProviderPackageType),
+											Package:         "not-here-3",
+											ResolvedPackage: "not-here-3",
+											Type:            ptr.To(v1beta1.ProviderPackageType),
 										},
 									},
 								},
@@ -381,19 +412,24 @@ func TestResolve(t *testing.T) {
 							MockGetNode: func(s string) (dag.Node, error) {
 								if s == "not-here-1" {
 									return &v1beta1.LockPackage{
-										Source:  "not-here-1",
-										Version: "v0.0.1",
+										Source:         "not-here-1",
+										ResolvedSource: "not-here-1",
+										Version:        "v0.0.1",
 									}, nil
 								}
 								if s == "not-here-2" {
 									return &v1beta1.LockPackage{
-										Source:  "not-here-2",
-										Version: "v0.0.1",
+										Source:         "not-here-2",
+										ResolvedSource: "not-here-2",
+										Version:        "v0.0.1",
 									}, nil
 								}
 								return nil, nil
 							},
 						}
+					},
+					config: &xpkgfake.MockConfigStore{
+						MockRewritePath: xpkgfake.NewMockRewritePathFn("", "", nil),
 					},
 					log: logging.NewNopLogger(),
 				},
@@ -439,20 +475,24 @@ func TestResolve(t *testing.T) {
 							l := obj.(*v1beta1.Lock)
 							l.Packages = []v1beta1.LockPackage{
 								{
-									Name:   "config-nop-a-abc123",
-									Source: "xpkg.crossplane.io/hasheddan/config-nop-a",
+									Name:           "config-nop-a-abc123",
+									Source:         "xpkg.crossplane.io/hasheddan/config-nop-a",
+									ResolvedSource: "xpkg.crossplane.io/hasheddan/config-nop-a",
 									Dependencies: []v1beta1.Dependency{
 										{
-											Package: "not-here-1",
-											Type:    ptr.To(v1beta1.ProviderPackageType),
+											Package:         "not-here-1",
+											ResolvedPackage: "not-here-1",
+											Type:            ptr.To(v1beta1.ProviderPackageType),
 										},
 										{
-											Package: "not-here-2",
-											Type:    ptr.To(v1beta1.ConfigurationPackageType),
+											Package:         "not-here-2",
+											ResolvedPackage: "not-here-2",
+											Type:            ptr.To(v1beta1.ConfigurationPackageType),
 										},
 										{
-											Package: "function-not-here-1",
-											Type:    ptr.To(v1beta1.FunctionPackageType),
+											Package:         "function-not-here-1",
+											ResolvedPackage: "function-not-here-1",
+											Type:            ptr.To(v1beta1.FunctionPackageType),
 										},
 									},
 								},
@@ -460,8 +500,9 @@ func TestResolve(t *testing.T) {
 									Source: "not-here-1",
 									Dependencies: []v1beta1.Dependency{
 										{
-											Package: "not-here-3",
-											Type:    ptr.To(v1beta1.ProviderPackageType),
+											Package:         "not-here-3",
+											ResolvedPackage: "not-here-3",
+											Type:            ptr.To(v1beta1.ProviderPackageType),
 										},
 									},
 								},
@@ -509,6 +550,9 @@ func TestResolve(t *testing.T) {
 								return nil, nil
 							},
 						}
+					},
+					config: &xpkgfake.MockConfigStore{
+						MockRewritePath: xpkgfake.NewMockRewritePathFn("", "", nil),
 					},
 					log: logging.NewNopLogger(),
 				},
@@ -588,6 +632,9 @@ func TestResolve(t *testing.T) {
 							},
 							MockAddOrUpdateNodes: func(_ ...dag.Node) {},
 						}
+					},
+					config: &xpkgfake.MockConfigStore{
+						MockRewritePath: xpkgfake.NewMockRewritePathFn("", "", nil),
 					},
 					log: logging.NewNopLogger(),
 				},

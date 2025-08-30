@@ -71,6 +71,12 @@ spec:
                         description: Package is the OCI image name without a tag or
                           digest.
                         type: string
+                      resolvedPackage:
+                        description: |-
+                          ResolvedPackage is the OCI image name with tag or digest that actually
+                          satisfies this dependency after applying ImageConfig rewrites. This should
+                          match the ResolvedSource of an existing package in the Lock.
+                        type: string
                       type:
                         description: |-
                           Type is the type of package. Can be either Configuration or Provider.
@@ -91,6 +97,12 @@ spec:
                 name:
                   description: Name corresponds to the name of the package revision
                     for this package.
+                  type: string
+                resolvedSource:
+                  description: |-
+                    ResolvedSource is the OCI image name with tag or digest after applying
+                    ImageConfig rewrites. If no ImageConfig applies, this will be the same
+                    as Source:Version.
                   type: string
                 source:
                   description: Source is the OCI image name without a tag or digest.

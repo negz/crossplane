@@ -19,6 +19,7 @@ package revision
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/Masterminds/semver"
@@ -44,7 +45,6 @@ import (
 const (
 	lockName = "lock"
 
-	errNotMeta                   = "meta type is not a valid package"
 	errGetOrCreateLock           = "cannot get or create lock"
 	errInitDAG                   = "cannot initialize dependency graph from the packages in the lock"
 	errFmtIncompatibleDependency = "incompatible dependencies: %s"
@@ -64,15 +64,17 @@ type PackageDependencyManager struct {
 	client      client.Client
 	newDag      dag.NewDAGFn
 	packageType schema.GroupVersionKind
+	config      xpkg.ConfigStore
 	log         logging.Logger
 }
 
 // NewPackageDependencyManager creates a new PackageDependencyManager.
-func NewPackageDependencyManager(c client.Client, nd dag.NewDAGFn, pkgType schema.GroupVersionKind, l logging.Logger) *PackageDependencyManager {
+func NewPackageDependencyManager(c client.Client, nd dag.NewDAGFn, pkgType schema.GroupVersionKind, config xpkg.ConfigStore, l logging.Logger) *PackageDependencyManager {
 	return &PackageDependencyManager{
 		client:      c,
 		newDag:      nd,
 		packageType: pkgType,
+		config:      config,
 		log:         l,
 	}
 }
@@ -109,6 +111,14 @@ func (m *PackageDependencyManager) Resolve(ctx context.Context, meta pkgmetav1.P
 		}
 
 		pdep.Constraints = dep.Version
+
+		// Apply ImageConfig rewrites to get the resolved package source
+		resolvedPackage := pdep.Package
+		if _, rewrittenPath, err := m.config.RewritePath(ctx, pdep.Package); err == nil && rewrittenPath != "" {
+			resolvedPackage = rewrittenPath
+		}
+		pdep.ResolvedPackage = resolvedPackage
+
 		sources[i] = pdep
 	}
 
@@ -139,21 +149,36 @@ func (m *PackageDependencyManager) Resolve(ctx context.Context, meta pkgmetav1.P
 		return found, installed, invalid, errors.Wrap(err, errInitDAG)
 	}
 
-	lockRef := xpkg.ParsePackageSourceFromReference(prRef)
+	source := xpkg.ParsePackageSourceFromReference(prRef)
+
+	// Apply ImageConfig rewrites to get the resolved source (package name only, no version)
+	resolvedSource := source
+	// We need to pass the full image reference (with version) to RewritePath because
+	// ImageConfig match prefixes can include tags (e.g., "example.org/repo:v1.0.0").
+	// If we only passed the package name, such tag-specific rewrites wouldn't match.
+	fullRef := fmt.Sprintf("%s:%s", source, prRef.Identifier())
+	if _, rewritten, err := m.config.RewritePath(ctx, fullRef); err == nil && rewritten != "" {
+		// Extract just the package name from the rewritten path (remove version/tag)
+		if ref, err := name.ParseReference(rewritten, name.StrictValidation); err == nil {
+			resolvedSource = ref.Context().String()
+		}
+	}
+
 	// NOTE(hasheddan): consider adding health of package to lock so that it can
 	// be rolled up to any dependent packages.
 	self := v1beta1.LockPackage{
-		APIVersion:   ptr.To(m.packageType.GroupVersion().String()),
-		Kind:         ptr.To(m.packageType.Kind),
-		Name:         pr.GetName(),
-		Source:       lockRef,
-		Version:      prRef.Identifier(),
-		Dependencies: sources,
+		APIVersion:     ptr.To(m.packageType.GroupVersion().String()),
+		Kind:           ptr.To(m.packageType.Kind),
+		Name:           pr.GetName(),
+		Source:         source,
+		Version:        prRef.Identifier(),
+		ResolvedSource: resolvedSource,
+		Dependencies:   sources,
 	}
 
-	// Delete packages in lock with same name and distinct source
-	// This is a corner case when source is updated but image SHA is not (i.e. relocate same image
-	// to another registry)
+	// Delete packages in lock with same name and distinct source This is a
+	// corner case when source is updated but image SHA is not (i.e.
+	// relocate same image to another registry)
 	for _, lp := range lock.Packages {
 		if self.Name == lp.Name && self.Type == lp.Type && self.Source != lp.Identifier() {
 			m.log.Debug("Package with same name and type but different source exists in lock. Removing it.",
@@ -177,11 +202,25 @@ func (m *PackageDependencyManager) Resolve(ctx context.Context, meta pkgmetav1.P
 
 	prExists := false
 
-	for _, lp := range lock.Packages {
-		if lp.Name == pr.GetName() {
+	// Check if package exists and update if needed.
+	for i := range lock.Packages {
+		if lock.Packages[i].Name != pr.GetName() {
+			continue
+		}
+
+		// The package exists in the lock, and matches our desired
+		// state.
+		if LockPackagesEqual(&lock.Packages[i], &self) {
 			prExists = true
 			break
 		}
+
+		// The package exists in the lock but we need to update it, e.g.
+		// because a new ImageConfig affects its resolved packages. Just
+		// delete it and let the !prExists case below add the updated
+		// version.
+		lock.Packages = slices.Delete(lock.Packages, i, i+1)
+		break
 	}
 
 	// If we don't exist in lock then we should add self.
@@ -212,14 +251,32 @@ func (m *PackageDependencyManager) Resolve(ctx context.Context, meta pkgmetav1.P
 		}
 	}
 
-	tree, err := d.TraceNode(lockRef)
+	// Build a dependency tree to detect missing dependencies.
+	//
+	// Background: When we initialized the DAG with d.Init(lock.Packages), some
+	// dependencies referenced by lock packages might not have existed as actual
+	// packages in the lock. The DAG automatically created placeholder nodes for
+	// these missing dependencies and returned them as "implied" nodes.
+	//
+	// Now we need to check if any of these missing dependencies are actually
+	// reachable from our current package through the dependency graph:
+	//
+	// 1. TraceNode builds a tree of all dependencies reachable from this package
+	// 2. We check if any "implied" (missing) dependencies appear in this tree
+	// 3. If they do, it means they're required but missing from the lock
+	// 4. Counter-intuitively, finding an implied dependency in the tree means
+	//    it's "missing" - because implied nodes represent dependencies that
+	//    should exist but don't have actual package entries in the lock
+	//
+	// The "installed--" logic decrements the count because we initially assume
+	// all dependencies in the tree are installed, but implied ones aren't really.
+	tree, err := d.TraceNode(self.ResolvedSource)
 	if err != nil {
 		return found, installed, invalid, err
 	}
 
 	found = len(tree)
 	installed = found
-	// Check if any dependencies or transitive dependencies are missing (implied).
 	var missing []dag.Node
 
 	for _, imp := range implied {
@@ -239,7 +296,7 @@ func (m *PackageDependencyManager) Resolve(ctx context.Context, meta pkgmetav1.P
 	var invalidDeps []string
 
 	for _, dep := range self.Dependencies {
-		n, err := d.GetNode(dep.Package)
+		n, err := d.GetNode(dep.Identifier())
 		if err != nil {
 			return found, installed, invalid, errors.New(errDependencyNotInGraph)
 		}
@@ -329,4 +386,25 @@ func NDependenciesAndSomeMore(n int, d []dag.Node) string {
 	}
 
 	return resource.StableNAndSomeMore(n, out)
+}
+
+// LockPackagesEqual compares two LockPackages for equality, focusing on fields
+// that can change due to ImageConfig rewrites (ResolvedSource and dependency ResolvedPackage fields).
+func LockPackagesEqual(a, b *v1beta1.LockPackage) bool {
+	if a.ResolvedSource != b.ResolvedSource {
+		return false
+	}
+
+	if len(a.Dependencies) != len(b.Dependencies) {
+		return false
+	}
+
+	for i, depA := range a.Dependencies {
+		depB := b.Dependencies[i]
+		if depA.ResolvedPackage != depB.ResolvedPackage {
+			return false
+		}
+	}
+
+	return true
 }
