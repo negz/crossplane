@@ -32,13 +32,12 @@ set -e
 # This script re-executes itself inside the container to avoid sh -c quoting.
 
 if [ "${NIX_SH_CONTAINER:-}" = "1" ]; then
-  # Install the Docker daemon from Nixpkgs (Nix's package repository with ~100k
-  # packages). The -iA flag means "install by attribute path" - a direct lookup
-  # rather than a search. Installed packages persist in the /nix volume, so
-  # this only runs once.
-  if ! command -v dockerd >/dev/null 2>&1; then
-    nix-env -iA nixpkgs.docker
-  fi
+  # Install tools from Nixpkgs (Nix's package repository with ~100k packages).
+  # The -iA flag means "install by attribute path" - a direct lookup rather than
+  # a search. Installed packages persist in the /nix volume. We need Docker for
+  # kind clusters, and rsync to copy build results (cp has permission issues on
+  # macOS with Nix store files).
+  nix-env -iA nixpkgs.docker nixpkgs.rsync
 
   # Start the Docker daemon, storing its data in /nix for persistence across
   # container runs. This gives us a consistent Docker environment with cached
@@ -79,7 +78,7 @@ if [ "${NIX_SH_CONTAINER:-}" = "1" ]; then
   # ensures the target exists in this container's store (not a stale symlink
   # from a host Nix install).
   if [ -L result ] && readlink result | grep -q '^/nix/store/' && [ -e result ]; then
-    cp -rL result result.tmp
+    rsync -rL --chmod=u+w result/ result.tmp
     rm result
     mv result.tmp result
   fi
