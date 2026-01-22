@@ -186,7 +186,7 @@
           '';
 
       # Build OCI image for a specific architecture (always Linux)
-      mkImage =
+      mkImageArgs =
         {
           pkgs,
           crossplaneBin,
@@ -200,38 +200,37 @@
             inherit arch hash;
             os = "linux";
           };
-          rawImage = pkgs.dockerTools.buildLayeredImage {
-            name = "crossplane/crossplane";
-            tag = version;
-            created = "now";
-            architecture = arch;
+        in
+        {
+          name = "crossplane/crossplane";
+          tag = version;
+          created = "now";
+          architecture = arch;
 
-            fromImage = base;
+          fromImage = base;
 
-            contents = [
-              crossplaneBin
-            ];
+          contents = [
+            crossplaneBin
+          ];
 
-            extraCommands = ''
-              mkdir -p crds webhookconfigurations
-              cp -r ${self}/cluster/crds/* crds/
-              cp -r ${self}/cluster/webhookconfigurations/* webhookconfigurations/
-            '';
+          extraCommands = ''
+            mkdir -p crds webhookconfigurations
+            cp -r ${self}/cluster/crds/* crds/
+            cp -r ${self}/cluster/webhookconfigurations/* webhookconfigurations/
+          '';
 
-            config = {
-              Entrypoint = [ "/bin/crossplane" ];
-              ExposedPorts = {
-                "8080/tcp" = { };
-              };
-              User = "65532";
-              Labels = {
-                "org.opencontainers.image.source" = "https://github.com/crossplane/crossplane";
-                "org.opencontainers.image.version" = version;
-              };
+          config = {
+            Entrypoint = [ "/bin/crossplane" ];
+            ExposedPorts = {
+              "8080/tcp" = { };
+            };
+            User = "65532";
+            Labels = {
+              "org.opencontainers.image.source" = "https://github.com/crossplane/crossplane";
+              "org.opencontainers.image.version" = version;
             };
           };
-        in
-        rawImage;
+        };
 
       mkHelmChart =
         pkgs:
@@ -291,11 +290,11 @@
         images = builtins.listToAttrs (
           map (platform: {
             name = "linux-${platform.arch}";
-            value = mkImage {
+            value = pkgs.dockerTools.buildLayeredImage (mkImageArgs {
               inherit pkgs;
               inherit (platform) arch hash;
               crossplaneBin = crossplaneBins."linux-${platform.arch}";
-            };
+            });
           }) imageArchs
         );
 
@@ -313,6 +312,24 @@
           pkgs.kubernetes-controller-tools
         ];
 
+        # Development tools shared by apps and devShell
+        devTools = [
+          pkgs.coreutils
+          pkgs.gnused
+          pkgs.go
+          pkgs.golangci-lint
+          pkgs.kubectl
+          pkgs.kubernetes-helm
+          pkgs.kind
+          pkgs.docker-client
+          pkgs.gotestsum
+          pkgs.helm-docs
+          gomod2nix.packages.${system}.default
+        ] ++ codegenTools;
+
+        # PATH for apps - isolated from host tools
+        devToolsPath = pkgs.lib.makeBinPath devTools;
+
         # E2E test binary - built with buildGoApplication for caching
         e2e = pkgs.buildGoApplication {
           pname = "crossplane-e2e";
@@ -320,6 +337,8 @@
           src = self;
           pwd = self;
           modules = ./gomod2nix.toml;
+
+          CGO_ENABLED = "0";
 
           # Build test binary instead of regular binary
           buildPhase = ''
@@ -388,6 +407,8 @@
             pwd = self;
             modules = ./gomod2nix.toml;
 
+            CGO_ENABLED = "0";
+
             dontBuild = true;
 
             # Excludes e2e tests
@@ -411,6 +432,8 @@
             src = self;
             pwd = self;
             modules = ./gomod2nix.toml;
+
+            CGO_ENABLED = "0";
 
             nativeBuildInputs = [ pkgs.golangci-lint ];
 
@@ -450,6 +473,8 @@
             src = self;
             pwd = self;
             modules = ./gomod2nix.toml;
+
+            CGO_ENABLED = "0";
 
             nativeBuildInputs = codegenTools ++ [ pkgs.kubectl ];
 
@@ -503,25 +528,34 @@
         #
         # Run with: nix run .#test
         apps = {
-          load-image = {
-            type = "app";
-            program = pkgs.lib.getExe (
-              pkgs.writeShellScriptBin "load-image" ''
-                set -e
-                echo "Loading crossplane/crossplane:${version} (linux/${nativePlatform.arch}) into Docker..."
-                ${pkgs.docker-client}/bin/docker load < ${images."linux-${nativePlatform.arch}"}
-              ''
-            );
-            meta.description = "Build and load OCI image into Docker";
-          };
+          stream-image =
+            let
+              nativeImageArch = builtins.head (
+                builtins.filter (p: p.arch == nativePlatform.arch) imageArchs
+              );
+              streamScript = pkgs.dockerTools.streamLayeredImage (mkImageArgs {
+                inherit pkgs;
+                inherit (nativeImageArch) arch hash;
+                crossplaneBin = crossplaneBins."linux-${nativePlatform.arch}";
+              });
+            in
+            {
+              type = "app";
+              program = "${streamScript}";
+              meta.description = "Stream OCI image tarball to stdout (pipe to docker load)";
+            };
 
           test = {
             type = "app";
             program = pkgs.lib.getExe (
-              pkgs.writeShellScriptBin "test" ''
-                set -e
-                ${pkgs.go}/bin/go test -covermode=count ./apis/... ./cmd/... ./internal/... "$@"
-              ''
+              pkgs.writeShellApplication {
+                name = "test";
+                text = ''
+                  export PATH="${devToolsPath}"
+                  export CGO_ENABLED=0
+                  go test -covermode=count ./apis/... ./cmd/... ./internal/... "$@"
+                '';
+              }
             );
             meta.description = "Run unit tests";
           };
@@ -529,11 +563,15 @@
           lint = {
             type = "app";
             program = pkgs.lib.getExe (
-              pkgs.writeShellScriptBin "lint" ''
-                set -e
-                export GOLANGCI_LINT_CACHE="''${XDG_CACHE_HOME:-$HOME/.cache}/golangci-lint"
-                ${pkgs.golangci-lint}/bin/golangci-lint run --fix "$@"
-              ''
+              pkgs.writeShellApplication {
+                name = "lint";
+                text = ''
+                  export PATH="${devToolsPath}"
+                  export CGO_ENABLED=0
+                  export GOLANGCI_LINT_CACHE="''${XDG_CACHE_HOME:-$HOME/.cache}/golangci-lint"
+                  golangci-lint run --fix "$@"
+                '';
+              }
             );
             meta.description = "Run golangci-lint with auto-fix";
           };
@@ -541,14 +579,18 @@
           tidy = {
             type = "app";
             program = pkgs.lib.getExe (
-              pkgs.writeShellScriptBin "tidy" ''
-                set -e
-                echo "Running go mod tidy..."
-                ${pkgs.go}/bin/go mod tidy
-                echo "Regenerating gomod2nix.toml..."
-                ${gomod2nix.packages.${system}.default}/bin/gomod2nix generate --with-deps
-                echo "Done"
-              ''
+              pkgs.writeShellApplication {
+                name = "tidy";
+                text = ''
+                  export PATH="${devToolsPath}"
+                  export CGO_ENABLED=0
+                  echo "Running go mod tidy..."
+                  go mod tidy
+                  echo "Regenerating gomod2nix.toml..."
+                  gomod2nix generate --with-deps
+                  echo "Done"
+                '';
+              }
             );
             meta.description = "Run go mod tidy and regenerate gomod2nix.toml";
           };
@@ -556,32 +598,25 @@
           generate = {
             type = "app";
             program = pkgs.lib.getExe (
-              pkgs.writeShellScriptBin "generate" ''
-                set -e
-                # PATH injection required - go generate spawns tools that must be discoverable
-                export PATH="${
-                  pkgs.lib.makeBinPath (
-                    [
-                      pkgs.coreutils
-                      pkgs.go
-                      pkgs.kubectl
-                    ]
-                    ++ codegenTools
-                  )
-                }:$PATH"
+              pkgs.writeShellApplication {
+                name = "generate";
+                text = ''
+                  export PATH="${devToolsPath}"
+                  export CGO_ENABLED=0
 
-                echo "Running go generate..."
-                ${pkgs.go}/bin/go generate -tags generate .
+                  echo "Running go generate..."
+                  go generate -tags generate .
 
-                echo "Patching CRDs..."
-                ${pkgs.kubectl}/bin/kubectl patch --local --type=json \
-                  --patch-file cluster/crd-patches/pkg.crossplane.io_deploymentruntimeconfigs.yaml \
-                  --filename cluster/crds/pkg.crossplane.io_deploymentruntimeconfigs.yaml \
-                  --output=yaml > /tmp/patched.yaml \
-                  && mv /tmp/patched.yaml cluster/crds/pkg.crossplane.io_deploymentruntimeconfigs.yaml
+                  echo "Patching CRDs..."
+                  kubectl patch --local --type=json \
+                    --patch-file cluster/crd-patches/pkg.crossplane.io_deploymentruntimeconfigs.yaml \
+                    --filename cluster/crds/pkg.crossplane.io_deploymentruntimeconfigs.yaml \
+                    --output=yaml > /tmp/patched.yaml \
+                    && mv /tmp/patched.yaml cluster/crds/pkg.crossplane.io_deploymentruntimeconfigs.yaml
 
-                echo "Done"
-              ''
+                  echo "Done"
+                '';
+              }
             );
             meta.description = "Run code generation";
           };
@@ -589,52 +624,46 @@
           e2e = {
             type = "app";
             program = pkgs.lib.getExe (
-              pkgs.writeShellScriptBin "e2e" ''
-                set -e
+              pkgs.writeShellApplication {
+                name = "e2e";
+                text = ''
+                  export PATH="${devToolsPath}"
+                  export CGO_ENABLED=0
 
-                echo "Loading crossplane image into Docker..."
-                ${pkgs.docker-client}/bin/docker load < ${images."linux-${nativePlatform.arch}"}
+                  echo "Loading crossplane image into Docker..."
+                  docker load < ${images."linux-${nativePlatform.arch}"}
 
-                echo "Tagging image as crossplane-e2e/crossplane:latest..."
-                ${pkgs.docker-client}/bin/docker tag crossplane/crossplane:${version} crossplane-e2e/crossplane:latest
+                  echo "Tagging image as crossplane-e2e/crossplane:latest..."
+                  docker tag crossplane/crossplane:${version} crossplane-e2e/crossplane:latest
 
-                echo "Running e2e tests..."
-                ${pkgs.gotestsum}/bin/gotestsum \
-                  --format standard-verbose \
-                  --raw-command -- ${pkgs.go}/bin/go tool test2json -t -p E2E ${e2e}/bin/e2e -test.v "$@"
-              ''
+                  echo "Running e2e tests..."
+                  gotestsum \
+                    --format standard-verbose \
+                    --raw-command -- go tool test2json -t -p E2E ${e2e}/bin/e2e -test.v "$@"
+                '';
+              }
             );
             meta.description = "Run end-to-end tests";
           };
         };
 
         devShells.default = pkgs.mkShell {
-          buildInputs = [
-            pkgs.go
-            pkgs.golangci-lint
-            pkgs.kubectl
-            pkgs.kubernetes-helm
-            pkgs.kind
-            pkgs.gotestsum
-            pkgs.helm-docs
-            gomod2nix.packages.${system}.default
-          ]
-          ++ codegenTools;
+          buildInputs = devTools;
 
           shellHook = ''
             echo "Crossplane development shell ($(go version | cut -d' ' -f3))"
             echo ""
             echo "Local development:"
-            echo "  nix run .#load-image                # Build and load OCI image into Docker"
-            echo "  nix run .#generate                  # Run code generation"
-            echo "  nix run .#lint                      # Run linter (auto-fixes)"
-            echo "  nix run .#test                      # Run unit tests"
-            echo "  nix run .#tidy                      # Tidy Go modules"
-            echo "  nix run .#e2e -- -test.run TestFoo  # Run E2E tests"
+            echo "  nix run .#stream-image | docker load   # Load OCI image into Docker"
+            echo "  nix run .#generate                     # Run code generation"
+            echo "  nix run .#lint                         # Run linter (auto-fixes)"
+            echo "  nix run .#test                         # Run unit tests"
+            echo "  nix run .#tidy                         # Tidy Go modules"
+            echo "  nix run .#e2e -- -test.run TestFoo     # Run E2E tests"
             echo ""
             echo "CI:"
-            echo "  nix build                           # All binaries, images, Helm chart"
-            echo "  nix flake check                     # Run all checks (test, lint, generate)"
+            echo "  nix build                              # All binaries, images, Helm chart"
+            echo "  nix flake check                        # Run all checks (test, lint, generate)"
             echo ""
             echo "To use your preferred shell: nix develop -c \$SHELL"
             echo ""
