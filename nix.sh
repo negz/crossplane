@@ -1,20 +1,6 @@
 #!/usr/bin/env bash
 # nix.sh - Run Nix commands via Docker without installing Nix locally.
 #
-# Nix is a package manager that provides hermetic, reproducible builds. Every
-# build output is stored in /nix/store/<hash>-<name>/, where the hash is
-# derived from all inputs. This means builds are cacheable and reproducible.
-#
-# Crossplane's flake.nix (think: Makefile + lockfile) defines:
-#
-#   - Apps: Fast commands for development (test, lint, generate, etc.)
-#     These are "impure" - they can read/write the working directory.
-#
-#   - Packages: Reproducible builds for CI (binaries, images, Helm chart).
-#     These are "pure" - sandboxed with no network or filesystem access.
-#
-#   - Checks: Same as apps, but run in a sandbox for CI validation.
-#
 # Usage: ./nix.sh <command>
 #
 # Run './nix.sh flake show' for available apps and packages, or see flake.nix.
@@ -25,23 +11,19 @@
 
 set -e
 
-# =============================================================================
-# Container entrypoint
-# =============================================================================
 # When NIX_SH_CONTAINER is set, we're running inside the Docker container.
 # This script re-executes itself inside the container to avoid sh -c quoting.
 
 if [ "${NIX_SH_CONTAINER:-}" = "1" ]; then
-  # Install tools from Nixpkgs (Nix's package repository with ~100k packages).
-  # The -iA flag means "install by attribute path" - a direct lookup rather than
-  # a search. Installed packages persist in the /nix volume. We need Docker for
-  # kind clusters, and rsync to copy build results (cp has permission issues on
-  # macOS with Nix store files).
+  # Install tools this entrypoint script needs. It needs Docker to setup Docker
+  # in Docker for E2E tests, and rsync to copy build the build result (cp
+  # doesn't work well on MacOS volumes). Installed packages persist across runs
+  # thanks to the crossplane-nix volume.
   nix-env -iA nixpkgs.docker nixpkgs.rsync
 
-  # Start the Docker daemon, storing its data in /nix for persistence across
-  # container runs. This gives us a consistent Docker environment with cached
-  # images (e.g., kind node images).
+  # Start the Docker daemon, storing its data in the crossplane-nix volume for
+  # persistence across container runs. This gives us a consistent Docker
+  # environment with cached images (e.g., kind node images).
   dockerd --data-root=/nix/docker >/tmp/dockerd.log 2>&1 &
 
   attempts=0
@@ -63,20 +45,19 @@ if [ "${NIX_SH_CONTAINER:-}" = "1" ]; then
   # marker and chown them to the host user.
   marker=$(mktemp)
 
-  # If result is a directory (from a previous build's symlink-to-copy conversion),
-  # remove it so nix build can create its symlink. We only remove directories,
-  # not symlinks (which might be from a host Nix install).
+  # If result (i.e. the build output) is a directory, remove it so nix build can
+  # create its symlink. We only remove directories, not symlinks (which might be
+  # from a host Nix install).
   if [ -d result ] && [ ! -L result ]; then
     rm -rf result
   fi
 
   nix "${@}"
 
-  # If nix build created a result symlink pointing to /nix/store, replace it
-  # with a copy. The symlink would be dangling on the host since /nix/store
-  # only exists inside the container (in the Docker volume). The -e check
-  # ensures the target exists in this container's store (not a stale symlink
-  # from a host Nix install).
+  # Nix build makes result/ a symlink to a directory in the Nix store. That
+  # directory only exists inside the container, but it creates the symlink in
+  # /crossplane, which is shared with the host. We use this rsync trick to make
+  # result/ a directory of regular files.
   if [ -L result ] && readlink result | grep -q '^/nix/store/' && [ -e result ]; then
     rsync -rL --chmod=u+w result/ result.tmp
     rm result
@@ -92,14 +73,10 @@ if [ "${NIX_SH_CONTAINER:-}" = "1" ]; then
   exit 0
 fi
 
-# =============================================================================
-# Host entrypoint
-# =============================================================================
 # When running on the host, launch a Docker container and re-execute this
 # script inside it.
 
-# Nix configuration, equivalent to /etc/nix/nix.conf. Passed via environment
-# variable to avoid modifying the container's filesystem.
+# Nix configuration, equivalent to /etc/nix/nix.conf.
 NIX_CONFIG="
 # Flakes are Nix's modern project format - a flake.nix file plus a flake.lock
 # that pins all dependencies. This is still marked 'experimental' but is stable
@@ -110,9 +87,9 @@ experimental-features = nix-command flakes
 # like a Makefile target. 'auto' uses one job per CPU core.
 max-jobs = auto
 
-# Cachix is a binary cache service (like a Docker registry, but for Nix build
-# outputs). This cache contains pre-built Crossplane dependencies, avoiding the
-# need to build them from source.
+# Cachix is a binary cache service. Our GitHub Actions CI pushes there, so if CI
+# has recently built the commit you're on Nix will download stuff instead of
+# rebuilding it locally.
 extra-substituters = https://crossplane.cachix.org
 extra-trusted-public-keys = crossplane.cachix.org-1:NJluVUN9TX0rY/zAxHYaT19Y5ik4ELH4uFuxje+62d4=
 "
